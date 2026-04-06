@@ -1,0 +1,62 @@
+---
+title: "Introduction"
+description: "HASH is a self-building, open-source knowledge graph powered by AI agents and a strongly-typed entity system."
+---
+
+HASH is a self-building, open-source database that grows, structures, and checks itself. It integrates data in near-realtime and provides a powerful set of interfaces so that information can be understood and used in any context.
+
+Intelligent, autonomous agents can be deployed to grow, check, and maintain the database — integrating and structuring information from the public internet as well as your own connected private sources. Users, including those who are non-technical, can visually browse and manage both entities (data) and types (schemas). HASH acts as a source of truth for critical data, no matter its source, and provides a platform for high-trust, safety-assured decision-making.
+
+<Note>
+  HASH is available as a hosted service at [app.hash.ai](https://app.hash.ai) or you can run it yourself. Self-hosting is experimental and not yet officially supported — see [Self-Hosting HASH](/self-hosting) for details.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Entities" icon="database" href="/guides/entities">
+    Create, browse, and manage structured records in your knowledge graph. Every piece of data is a typed entity with a defined schema.
+  </Card>
+  <Card title="Type system" icon="sitemap" href="/guides/types">
+    Define entity types and property types that enforce structure and enable semantic interoperability across your data.
+  </Card>
+  <Card title="AI agents" icon="robot" href="/concepts/ai-agents">
+    Deploy autonomous agents to research, gather, and validate data — integrating information from the web and your private sources automatically.
+  </Card>
+  <Card title="Flows" icon="bolt" href="/guides/flows-and-goals">
+    Orchestrate multi-step AI-powered workflows to enrich and maintain your knowledge graph with up-to-date, structured information.
+  </Card>
+  <Card title="Browser plugin" icon="puzzle-piece" href="/guides/browser-plugin">
+    Capture entities from any webpage directly into HASH using the browser extension for Chrome, Firefox, Edge, and Arc.
+  </Card>
+  <Card title="Graph API" icon="code" href="/developers/graph-api">
+    Query and manipulate your knowledge graph programmatically via a REST API with a full OpenAPI specification.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+HASH is composed of several services that work together:
+
+**Frontend** — A Next.js web application served at `localhost:3000` in local development. It provides the visual interface for browsing entities, defining types, running flows, and managing your workspace.
+
+**Graph API** — A high-performance Rust service that acts as the query layer over the main datastore. It exposes a REST API for creating, querying, and managing entities, types, and their relationships. The Graph service uses PostgreSQL for persistent storage and includes a strongly-typed ontology with full temporal versioning.
+
+**AI worker** — A TypeScript-based [Temporal](https://temporal.io) worker (`hash-ai-worker-ts`) that executes AI-powered workflows. It connects to OpenAI and Anthropic APIs to power research flows, question-answering, and entity enrichment tasks.
+
+**Integration worker** — Manages two-way synchronization of external data sources with your HASH knowledge graph.
+
+**Browser plugin** — A browser extension that lets you capture structured entities from any webpage and push them directly into HASH.
+
+**External services** — HASH depends on Postgres (data storage), Ory Kratos (authentication), Redis (queuing), and Temporal (workflow orchestration). These run as Docker containers managed by the `yarn external-services` commands.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Get up and running with HASH in minutes — either via the cloud or locally.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/entities-and-types">
+    Learn about entities, types, and how the HASH data model works.
+  </Card>
+</CardGroup>

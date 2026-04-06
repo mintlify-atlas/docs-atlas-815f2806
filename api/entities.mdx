@@ -1,0 +1,529 @@
+---
+title: "Entities API"
+description: "Create, update, archive, and query entity instances — the nodes in the HASH knowledge graph. Entities carry structured properties and can be connected to each other via link entities."
+---
+
+Entities are the primary data objects in HASH. Each entity is an instance of one or more **entity types** and carries a set of typed **properties** that conform to those types. Entities are stored with full bi-temporal versioning, allowing you to query their state at any point in decision time or transaction time.
+
+## Entity structure
+
+An entity returned from the API has the following shape:
+
+```json
+{
+  "properties": {
+    "https://example.com/property-types/name/": "Alice"
+  },
+  "linkData": null,
+  "metadata": {
+    "recordId": {
+      "entityId": "~web-id~entity-uuid",
+      "editionId": "550e8400-e29b-41d4-a716-446655440000"
+    },
+    "entityTypeIds": [
+      "https://example.com/entity-types/person/v/1"
+    ],
+    "temporalVersioning": {
+      "decisionTime": {
+        "start": { "kind": "inclusive", "limit": "2024-01-01T00:00:00Z" },
+        "end": { "kind": "unbounded" }
+      },
+      "transactionTime": {
+        "start": { "kind": "inclusive", "limit": "2024-01-01T00:00:00Z" },
+        "end": { "kind": "unbounded" }
+      }
+    },
+    "archived": false,
+    "provenance": {
+      "edition": {
+        "createdById": "actor-uuid"
+      }
+    }
+  }
+}
+```
+
+<ResponseField name="properties" type="object" required>
+  A map of property type base URLs to their values. Keys are versioned property type URLs (base URL form), and values are the raw property data conforming to the property type's schema.
+</ResponseField>
+
+<ResponseField name="linkData" type="object">
+  Present only on **link entities**. Contains the IDs of the left and right entities that this link connects. `null` for regular (non-link) entities.
+
+  <Expandable title="linkData fields">
+    <ResponseField name="leftEntityId" type="string" required>
+      The entity ID of the source entity on the left side of the link.
+    </ResponseField>
+    <ResponseField name="rightEntityId" type="string" required>
+      The entity ID of the target entity on the right side of the link.
+    </ResponseField>
+    <ResponseField name="leftEntityConfidence" type="number">
+      Confidence score (0–1) for the left entity association.
+    </ResponseField>
+    <ResponseField name="rightEntityConfidence" type="number">
+      Confidence score (0–1) for the right entity association.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="metadata" type="object" required>
+  Comprehensive metadata about the entity.
+
+  <Expandable title="metadata fields">
+    <ResponseField name="recordId.entityId" type="string" required>
+      A composite string identifier of the form `~{webId}~{entityUuid}` that uniquely identifies the entity across all webs.
+    </ResponseField>
+    <ResponseField name="recordId.editionId" type="string (UUID)" required>
+      UUID identifying this specific edition (version) of the entity.
+    </ResponseField>
+    <ResponseField name="entityTypeIds" type="string[]" required>
+      Array of versioned entity type URLs that this entity conforms to. An entity may conform to multiple types simultaneously.
+    </ResponseField>
+    <ResponseField name="temporalVersioning" type="object" required>
+      Bi-temporal intervals tracking decision time (when the entity was decided to exist in the real world) and transaction time (when it was recorded in the system).
+    </ResponseField>
+    <ResponseField name="archived" type="boolean" required>
+      Whether the entity is archived. Archived entities are excluded from regular queries but remain in the system for historical purposes.
+    </ResponseField>
+    <ResponseField name="confidence" type="number">
+      An optional confidence score (0–1) for the entity as a whole.
+    </ResponseField>
+    <ResponseField name="provenance" type="object" required>
+      Tracks who created and modified the entity and when.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create an entity
+
+```
+POST /entities
+```
+
+Creates a new entity in the graph.
+
+**Headers**
+
+<ParamField header="X-Authenticated-User-Actor-Id" type="string (UUID)" required>
+  The actor UUID used to authorize the request and record provenance.
+</ParamField>
+
+**Body**
+
+<ParamField body="webId" type="string (UUID)" required>
+  The ID of the web (user or organization) that will own this entity.
+</ParamField>
+
+<ParamField body="entityTypeIds" type="string[]" required>
+  One or more versioned entity type URLs (e.g. `https://example.com/types/person/v/1`) that this entity conforms to.
+</ParamField>
+
+<ParamField body="properties" type="object" required>
+  The entity's property values. Keys are property type base URLs; values are the typed property data.
+</ParamField>
+
+<ParamField body="draft" type="boolean" required>
+  Whether to create the entity in draft state. Draft entities are excluded from non-draft queries.
+</ParamField>
+
+<ParamField body="provenance" type="object" required>
+  Provenance information for this edition of the entity.
+</ParamField>
+
+<ParamField body="entityUuid" type="string (UUID)">
+  Optional client-specified UUID for the entity. If omitted, the server generates one.
+</ParamField>
+
+<ParamField body="linkData" type="object">
+  Required when creating a **link entity**. Specifies the left and right entity IDs that this link connects.
+</ParamField>
+
+<ParamField body="decisionTime" type="string (ISO 8601)">
+  The decision time timestamp to use. Defaults to the current time.
+</ParamField>
+
+<ParamField body="confidence" type="number">
+  Optional confidence score (0–1) for the entity.
+</ParamField>
+
+**Example request**
+
+```json
+{
+  "webId": "01234567-89ab-cdef-0123-456789abcdef",
+  "entityTypeIds": [
+    "https://example.com/types/entity-types/person/v/1"
+  ],
+  "properties": {
+    "https://example.com/types/property-types/name/": "Alice",
+    "https://example.com/types/property-types/age/": 30
+  },
+  "draft": false,
+  "provenance": {
+    "actorType": "human",
+    "origin": {
+      "type": "web-app"
+    }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | The created entity object |
+| `404` | Entity type URL was not found |
+| `422` | Request body is invalid |
+| `500` | Store error |
+
+---
+
+## Create entities in bulk
+
+```
+POST /entities/bulk
+```
+
+Creates multiple entities in a single request. The body is an array of `CreateEntityParams` objects (the same shape as the single-entity create endpoint). Returns an array of created entities.
+
+---
+
+## Update an entity
+
+```
+PATCH /entities
+```
+
+Updates an existing entity by applying a list of property patch operations.
+
+**Headers**
+
+<ParamField header="X-Authenticated-User-Actor-Id" type="string (UUID)" required>
+  The actor UUID used to authorize the request.
+</ParamField>
+
+**Body**
+
+<ParamField body="entityId" type="string" required>
+  The composite entity ID (`~{webId}~{entityUuid}`) of the entity to update.
+</ParamField>
+
+<ParamField body="provenance" type="object" required>
+  Provenance information for this new edition.
+</ParamField>
+
+<ParamField body="entityTypeIds" type="string[]">
+  Updated set of entity type URLs. Replaces the existing types if provided.
+</ParamField>
+
+<ParamField body="properties" type="object[]">
+  An array of property patch operations to apply. Each operation specifies the property path and the new value (or removal).
+</ParamField>
+
+<ParamField body="archived" type="boolean">
+  Set to `true` to archive the entity, or `false` to unarchive it.
+</ParamField>
+
+<ParamField body="draft" type="boolean">
+  Change the entity's draft status.
+</ParamField>
+
+<ParamField body="confidence" type="number">
+  Updated confidence score for the entity.
+</ParamField>
+
+<ParamField body="decisionTime" type="string (ISO 8601)">
+  The decision time to use for this update.
+</ParamField>
+
+**Example request**
+
+```json
+{
+  "entityId": "~01234567-89ab-cdef-0123-456789abcdef~aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+  "properties": [
+    {
+      "op": "add",
+      "path": ["https://example.com/types/property-types/name/"],
+      "value": { "value": "Alice Smith", "metadata": {} }
+    }
+  ],
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | The updated entity |
+| `404` | Entity ID or entity type URL not found |
+| `422` | Request body is invalid |
+| `423` | The entity was concurrently updated — retry the operation |
+| `500` | Store error |
+
+---
+
+## Archive an entity
+
+To archive an entity, send a `PATCH /entities` request with `"archived": true`. Archived entities are excluded from regular queries but their history is preserved.
+
+```json
+{
+  "entityId": "~01234567-89ab-cdef-0123-456789abcdef~aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+  "archived": true,
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+To retrieve archived entities explicitly, use the structural query with an `archived` filter:
+
+```json
+{
+  "filter": {
+    "equal": [{ "path": ["archived"] }, { "parameter": true }]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+---
+
+## Query entities
+
+```
+POST /entities/query
+```
+
+Returns a flat list of entities matching a [structural query](/api/structural-queries).
+
+**Headers**
+
+<ParamField header="X-Authenticated-User-Actor-Id" type="string (UUID)" required>
+  The actor UUID used to authorize the request.
+</ParamField>
+
+<ParamField header="Interactive" type="boolean">
+  Whether the request is interactive (e.g. from a UI). Defaults to `false`.
+</ParamField>
+
+**Query parameters**
+
+<ParamField query="limit" type="integer">
+  Maximum number of entities to return. Defaults to the server-configured maximum (default: 1000).
+</ParamField>
+
+<ParamField query="after" type="string">
+  Pagination cursor. Pass the cursor value from a previous response to retrieve the next page.
+</ParamField>
+
+**Body**
+
+The request body is a structural query. See [Structural Queries](/api/structural-queries) for the full specification.
+
+**Example: get all entities owned by a specific web**
+
+```json
+{
+  "filter": {
+    "equal": [
+      { "path": ["webId"] },
+      { "parameter": "01234567-89ab-cdef-0123-456789abcdef" }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | A `QueryEntitiesResponse` containing the matching entities |
+| `422` | Query is invalid |
+| `500` | Store error |
+
+---
+
+## Query entity subgraph
+
+```
+POST /entities/query/subgraph
+```
+
+Returns a **subgraph** — a set of vertices and edges — rooted at entities that match the filter. The `graphResolveDepths` field controls how many hops are traversed for each edge kind to include related types and linked entities in the same response.
+
+The response shape is a `Subgraph` object containing:
+
+- `vertices` — a map of all graph elements (entities, entity types, property types, data types) included in the subgraph.
+- `edges` — a map of the connections between those vertices.
+- `roots` — the identifiers of the root vertices that matched the filter.
+
+**Example: get an entity with its type definitions**
+
+```json
+{
+  "filter": {
+    "equal": [
+      { "path": ["uuid"] },
+      { "parameter": "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb" }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 255 },
+    "constrainsValuesOn": { "outgoing": 255 },
+    "constrainsPropertiesOn": { "outgoing": 255 },
+    "constrainsLinksOn": { "outgoing": 1 },
+    "constrainsLinkDestinationsOn": { "outgoing": 1 },
+    "isOfType": { "outgoing": 1 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+---
+
+## Count entities
+
+```
+POST /entities/query/count
+```
+
+Returns the total number of entities matching a structural query filter. Useful for pagination without fetching actual data.
+
+---
+
+## Validate an entity
+
+```
+POST /entities/validate
+```
+
+Validates entity data against one or more entity types without persisting anything. Returns a validation report describing any constraint violations.
+
+---
+
+## Diff two entity editions
+
+```
+POST /entities/diff
+```
+
+Computes the difference between two editions of an entity (or between two different entities). The response is a `DiffEntityResult` describing property and type changes.
+
+---
+
+## Link entities
+
+A **link entity** is a special kind of entity whose entity type inherits from the Block Protocol link base type:
+
+```
+https://blockprotocol.org/@blockprotocol/types/entity-type/link/
+```
+
+Link entities connect two other entities and are created with the same `POST /entities` endpoint by supplying `linkData`:
+
+```json
+{
+  "webId": "01234567-89ab-cdef-0123-456789abcdef",
+  "entityTypeIds": [
+    "https://example.com/types/entity-types/employment/v/1"
+  ],
+  "properties": {},
+  "linkData": {
+    "leftEntityId": "~01234567-89ab-cdef-0123-456789abcdef~source-entity-uuid",
+    "rightEntityId": "~01234567-89ab-cdef-0123-456789abcdef~target-entity-uuid"
+  },
+  "draft": false,
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+**Query all link entities:**
+
+```json
+{
+  "filter": {
+    "equal": [
+      { "path": ["type", "inheritsFrom", "*", "baseUrl"] },
+      {
+        "parameter": "https://blockprotocol.org/@blockprotocol/types/entity-type/link/"
+      }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+**Query a specific link by source and target:**
+
+```json
+{
+  "filter": {
+    "all": [
+      {
+        "equal": [
+          { "path": ["leftEntity", "id"] },
+          { "parameter": "~web-id~source-entity-uuid" }
+        ]
+      },
+      {
+        "equal": [
+          { "path": ["rightEntity", "id"] },
+          { "parameter": "~web-id~target-entity-uuid" }
+        ]
+      }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```

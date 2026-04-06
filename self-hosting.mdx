@@ -1,0 +1,225 @@
+---
+title: "Self-Hosting HASH"
+description: "Run HASH on your own infrastructure with full control over your data and environment."
+---
+
+<Warning>
+  Running HASH locally is not yet officially supported. These are experimental instructions that will be replaced with a comprehensive guide in due course. For a reliable experience, use the hosted service at [app.hash.ai](https://app.hash.ai).
+</Warning>
+
+## Prerequisites
+
+Before you begin, install the following tools and verify they meet the minimum required versions.
+
+<CodeGroup>
+  ```bash Git
+  git --version
+  # Required: ≥ 2.17
+  ```
+
+  ```bash Rust
+  rustup --version
+  # Required: ≥ 1.27.1
+
+  rustc --version
+  # Should match the toolchain in rust-toolchain.toml
+  # If not, run: rustup toolchain install
+  ```
+
+  ```bash Docker
+  docker --version
+  # Required: ≥ 20.10
+
+  docker compose version
+  # Required: ≥ 2.17.2
+
+  docker buildx version
+  # Required: ≥ 0.10.4
+  ```
+</CodeGroup>
+
+You also need the **Protobuf** compiler installed. On macOS, if `git --version` fails you may first need Xcode Command Line Tools:
+
+```bash
+xcode-select --install
+```
+
+If you use Docker Desktop on macOS or Windows, go to **Preferences → Resources** and allocate at least 4 GB of RAM. 8 GB is recommended for a smooth development experience.
+
+## Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the HASH monorepo and navigate to its root:
+
+    ```bash
+    git clone https://github.com/hashintel/hash.git
+    cd hash
+    ```
+  </Step>
+  <Step title="Install development tools with mise">
+    HASH uses [mise-en-place](https://mise.jdx.dev/) to manage tool versions consistently across the codebase. After [installing the mise CLI](https://mise.jdx.dev/getting-started.html#installing-mise-cli), run:
+
+    ```bash
+    mise install
+    ```
+
+    You will also need to [activate mise in your shell](https://mise.jdx.dev/getting-started.html#activate-mise) so it can manage tool versions automatically. Alternatively, you can install the tools manually using the versions specified in `.config/mise`.
+  </Step>
+  <Step title="Install Node.js dependencies">
+    ```bash
+    yarn install
+    ```
+  </Step>
+  <Step title="Verify Docker is running">
+    Ensure Docker is running before proceeding. You can verify it with:
+
+    ```bash
+    docker run hello-world
+    ```
+
+    On macOS or Windows, look for the Docker icon in your system tray or menu bar.
+  </Step>
+  <Step title="Configure environment variables">
+    Create an `.env.local` file in the repository root. This file is not committed to version control — keep all secrets here.
+
+    ```bash
+    OPENAI_API_KEY=your-openai-api-key                                      # required for most AI features
+    ANTHROPIC_API_KEY=your-anthropic-api-key                                 # required for most AI features
+    HASH_TEMPORAL_WORKER_AI_AWS_ACCESS_KEY_ID=your-aws-access-key-id         # required for most AI features
+    HASH_TEMPORAL_WORKER_AI_AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key # required for most AI features
+    E2B_API_KEY=your-e2b-api-key                                             # only required for the question-answering flow action
+    ```
+
+    <Note>
+      If you are not using AI-related features, dummy placeholder values are sufficient. Default environment variables come from `.env`, extended by `.env.development`, and then by `.env.local`. Only override values in `.env.local` — do not edit `.env` or `.env.development` unless you intend to change the defaults for all development environments.
+    </Note>
+  </Step>
+  <Step title="Start external services">
+    Launch Postgres, the Graph query layer, Ory Kratos, and Redis as Docker containers:
+
+    ```bash
+    yarn external-services up -d
+    ```
+
+    **Useful options:**
+
+    - `--build` — Force a rebuild of the Docker containers. Run this whenever you update your branch from upstream, or when changes have been made to the graph query layer.
+    - `--wait` — Wait until all services report healthy before returning.
+    - `yarn external-services down` — Stop and remove the containers.
+    - `yarn external-services:offline up` — Start services without fetching schemas from `blockprotocol.org`. Useful on slow or unreliable internet connections.
+
+    To run the Graph API and AI Temporal worker outside of Docker (useful when iterating on them frequently), stop them in Docker and then run these in separate terminals:
+
+    ```bash
+    yarn dev:graph
+    yarn workspace @apps/hash-ai-worker-ts dev
+    ```
+  </Step>
+  <Step title="Start the application">
+    ```bash
+    yarn start
+    ```
+
+    This starts both the backend and frontend in a single terminal. The frontend is ready when you see `http://localhost:3000` in the output. The API is online when you see `localhost:5001`. Both must be running for the frontend to work.
+
+    You can also start services separately in individual terminals:
+
+    ```bash
+    yarn start:graph
+    yarn start:backend
+    yarn start:frontend
+    ```
+
+    See `package.json` → `scripts` for the full list of available commands.
+  </Step>
+  <Step title="Sign in">
+    Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+    Three users are automatically seeded when the HASH API starts in development mode. All accounts use the password `password`:
+
+    | Email | Role |
+    |-------|------|
+    | `alice@example.com` | Regular user |
+    | `bob@example.com` | Regular user |
+    | `admin@example.com` | Admin |
+
+    <Note>
+      Seeding only runs when `NODE_ENV=development`. To ensure this, start the Graph API separately with `yarn start:graph`, then launch the app with `yarn dev` in a separate terminal.
+    </Note>
+  </Step>
+</Steps>
+
+## Environment variables
+
+The `.env.local` file supports many additional configuration options. Below are the most commonly needed variables beyond the AI keys covered above.
+
+### AWS
+
+Required if you want to use AWS S3 for file uploads or SES for email:
+
+| Variable | Description |
+|----------|-------------|
+| `AWS_REGION` | AWS region, e.g. `us-east-1` |
+| `AWS_ACCESS_KEY_ID` | Your AWS access key |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS secret key |
+| `AWS_S3_UPLOADS_BUCKET` | S3 bucket name for file uploads |
+
+### Email
+
+| Variable | Description |
+|----------|-------------|
+| `HASH_EMAIL_TRANSPORTER` | `dummy` (default in dev), `aws`, or `smtp` |
+| `SYSTEM_EMAIL_ADDRESS` | Sender email address (required for `aws`/`smtp`) |
+| `SYSTEM_EMAIL_SENDER_NAME` | Display name for the sender (required for `aws`/`smtp`) |
+
+During development the dummy email transporter writes emails to `var/api/dummy-email-transporter/email-dumps.yml` and logs them to the console.
+
+### Application
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FRONTEND_URL` | `http://localhost:3000` | URL of the frontend for generated links |
+| `API_ORIGIN` | `http://localhost:5001` | Origin that the API service is reachable on |
+| `SESSION_SECRET` | `secret` | Secret used to sign sessions |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, or `error` |
+| `NODE_ENV` | — | Set to `development` or `production` |
+
+## Running the browser plugin locally
+
+To run the HASH browser plugin against your local instance, see the [`apps/plugin-browser` README](https://github.com/hashintel/hash/tree/main/apps/plugin-browser#readme) in the monorepo.
+
+## Resetting the local database
+
+If you need to wipe and reset the local database — for example, to clear test data or recover from a corrupted state:
+
+<Steps>
+  <Step title="Tear down services and volumes">
+    ```bash
+    yarn external-services down -v
+    ```
+
+    The `-v` flag removes the Docker volumes, which drops all database data.
+  </Step>
+  <Step title="Restart external services">
+    ```bash
+    yarn external-services up --wait
+    ```
+
+    The `--wait` flag ensures all services are healthy before returning.
+  </Step>
+</Steps>
+
+## Test mode
+
+To prevent polluting your development database during tests, you can start external services in a separate test mode:
+
+```bash
+yarn external-services:test up
+```
+
+This is useful for test runs that modify database state without cleaning up after themselves.
+
+## Cloud deployment
+
+Support for running HASH in the cloud (AWS, GCP, Azure) is coming soon. In the meantime, the [`/infra`](https://github.com/hashintel/hash/tree/main/infra) directory in the monorepo contains Docker and Terraform assets that may help you get started.

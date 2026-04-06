@@ -1,0 +1,241 @@
+---
+title: "Entities and Types"
+description: "Understand the core building blocks of the HASH knowledge graph: entities, entity types, property types, data types, and link entities."
+---
+
+Every piece of information stored in HASH lives as an **entity** in the knowledge graph. Entities are defined by **types** — schemas that describe what properties an entity can have, what other entities it can link to, and how its data should be validated. This page explains each layer of the hierarchy and how they fit together.
+
+## The type hierarchy
+
+HASH uses a four-level hierarchy to represent knowledge:
+
+```
+DataType  →  PropertyType  →  EntityType  →  Entity
+```
+
+Each level depends on the level below it. Entities are instances of entity types; entity types are composed of property types; property types are constrained by data types.
+
+---
+
+## Data types
+
+A **data type** is the primitive leaf of the hierarchy. It defines the set of valid raw values a piece of data can take. HASH ships with a set of built-in system data types, and users can define custom ones.
+
+Common built-in data types include:
+
+| Data type | Description |
+|-----------|-------------|
+| `Text` | A UTF-8 string |
+| `Number` | A numeric value (integer or float) |
+| `Boolean` | `true` or `false` |
+| `Object` | A JSON object |
+| `Null` | The absence of a value |
+
+Data types are identified by a **versioned URL** — for example:
+
+```
+https://blockprotocol.org/@blockprotocol/types/data-type/text/v/1
+```
+
+<Note>
+Data types do not carry semantic meaning on their own. A `Text` data type simply means "a string." The property type that references it supplies the meaning — for example, "Email Address" or "Full Name."
+</Note>
+
+---
+
+## Property types
+
+A **property type** is a reusable, named property definition that references one or more data types (or other property types). Property types give semantic meaning to raw values.
+
+A property type specifies:
+- A human-readable title (e.g., `"Name"`, `"Date of Birth"`)
+- A description
+- The data type(s) that values must conform to
+
+For example, a `"Name"` property type might reference the `Text` data type, while a `"Priority"` property type might allow either `Text` or `Number`.
+
+Property types are identified by versioned URLs:
+
+```
+https://hash.ai/@alice/types/property-type/name/v/1
+```
+
+Property types are reusable across entity types. The same `"Name"` property type can be referenced by a `Person` entity type, an `Organization` entity type, and a `Product` entity type, ensuring consistent semantics wherever a name appears in the graph.
+
+---
+
+## Entity types
+
+An **entity type** acts like a schema or class definition. It describes:
+
+- Which property types an entity must or may have
+- Which link types the entity may have (and to what other entity types)
+- Which other entity types it inherits from (via `allOf`)
+
+<Note>
+Entity types are themselves identified by versioned URLs. When a type is updated, a new version is published at a new URL, while the old version remains valid and immutable. This ensures existing entities always resolve against a stable schema.
+</Note>
+
+### Defining properties
+
+An entity type lists the property types that its instances may carry, and marks a subset as required:
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type",
+  "kind": "entityType",
+  "type": "object",
+  "$id": "https://hash.ai/@alice/types/entity-type/person/v/1",
+  "title": "Person",
+  "description": "A human being",
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/name/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/name/v/1"
+    },
+    "https://hash.ai/@alice/types/property-type/email/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/email/v/1"
+    }
+  },
+  "required": ["https://hash.ai/@alice/types/property-type/name/"]
+}
+```
+
+### Inheritance
+
+Entity types can inherit from one or more parent types via the `allOf` field. An inheriting type automatically includes all properties and links defined by its parents, and may extend them with additional properties or links of its own.
+
+```json
+{
+  "$id": "https://hash.ai/@alice/types/entity-type/employee/v/1",
+  "title": "Employee",
+  "allOf": [
+    { "$ref": "https://hash.ai/@alice/types/entity-type/person/v/1" }
+  ],
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/employee-id/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/employee-id/v/1"
+    }
+  }
+}
+```
+
+---
+
+## Entities
+
+An **entity** is a concrete instance of an entity type. It holds actual property values and participates in the graph through links.
+
+Every entity has:
+- A unique UUID assigned at creation
+- A reference to one or more entity types it conforms to
+- A set of properties whose values are validated against those entity types
+- Temporal metadata tracking when each edition was created and when it applies
+
+```json
+{
+  "entityTypeId": "https://hash.ai/@alice/types/entity-type/person/v/1",
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/name/": "Alice",
+    "https://hash.ai/@alice/types/property-type/email/": "alice@example.com"
+  }
+}
+```
+
+---
+
+## Link entities
+
+A **link entity** is a special kind of entity that connects two other entities. Rather than using a separate edge concept, HASH represents links as first-class entities — they have:
+
+- A **left endpoint**: the source entity
+- A **right endpoint**: the target entity
+- An entity type that inherits from the base `Link` type
+- Their own properties, just like any other entity
+
+This means links carry metadata, can be versioned, and can themselves be linked to other entities.
+
+```json
+{
+  "filter": {
+    "equal": [
+      { "path": ["type", "inheritsFrom", "*", "baseUrl"] },
+      { "parameter": "https://blockprotocol.org/@blockprotocol/types/entity-type/link/" }
+    ]
+  }
+}
+```
+
+<Tip>
+Because links are entities, you can query them the same way you query any other entity — by their type, their left or right endpoint, or any property they carry. See [Structural Queries](/api/structural-queries) for details.
+</Tip>
+
+### Example: a `Friend Of` link
+
+A `Person` entity type might declare a `Friend Of` link:
+
+```json
+{
+  "links": {
+    "https://hash.ai/@alice/types/entity-type/friend-of/v/1": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "https://hash.ai/@alice/types/entity-type/person/v/1" }
+        ]
+      }
+    }
+  }
+}
+```
+
+When Alice links to Bob via `Friend Of`, a link entity is created:
+- Left: Alice's entity
+- Right: Bob's entity
+- Type: `Friend Of`
+
+---
+
+## Versioned URLs
+
+Every type — data type, property type, or entity type — is identified by a **versioned URL** of the form:
+
+```
+{baseUrl}v/{version}
+```
+
+For example:
+
+```
+https://hash.ai/@alice/types/entity-type/person/v/1
+```
+
+The `baseUrl` ends with a trailing slash and identifies the type across all versions:
+
+```
+https://hash.ai/@alice/types/entity-type/person/
+```
+
+The `version` is a positive integer. Publishing a new version of a type does not modify the old one — old entities that reference version 1 continue to validate against version 1.
+
+<Note>
+Type URLs can also carry draft pre-release identifiers such as `v/2-draft.my-lane.3`, allowing multiple developers to work on draft versions of the same type in parallel without conflicts.
+</Note>
+
+---
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Data types" icon="database" href="/concepts/type-system">
+    Primitive value constraints: Text, Number, Boolean, and custom variants.
+  </Card>
+  <Card title="Property types" icon="tag" href="/concepts/type-system">
+    Reusable, semantically named property definitions that reference data types.
+  </Card>
+  <Card title="Entity types" icon="shapes" href="/concepts/type-system">
+    Schema definitions for entities, including properties, links, and inheritance.
+  </Card>
+  <Card title="Temporal versioning" icon="clock" href="/concepts/temporal-versioning">
+    Every entity edition is tracked across decision time and transaction time.
+  </Card>
+</CardGroup>

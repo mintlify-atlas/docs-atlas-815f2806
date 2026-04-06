@@ -1,0 +1,498 @@
+---
+title: "Structural Queries"
+description: "Structural queries are the primary way to read data from the HASH Graph. They allow filtering graph elements and controlling how deeply the resulting subgraph is resolved."
+---
+
+Structural queries are the main entry point for reading data from the Graph. Every query endpoint — for entities, entity types, property types, and data types — accepts a structural query body. A query always returns a subgraph whose root vertices and surrounding context are determined by the query itself.
+
+A structural query has two parts:
+
+```json
+{
+  "filter": { },
+  "graphResolveDepths": { }
+}
+```
+
+- **`filter`** — selects which vertices become the root of the returned subgraph.
+- **`graphResolveDepths`** — controls how many edges away from those roots the subgraph is expanded, per edge kind.
+
+<Note>
+  All depth parameters must be supplied on every query. Omitting any depth field may produce unexpected results.
+</Note>
+
+---
+
+## Filter
+
+A filter is composed of **conditions** that match against **paths** through the graph and **parameters** supplied by the caller.
+
+### Path expressions
+
+A path is a sequence of tokens that navigates the graph structure from the root vertex. For example, to filter on the `baseUrl` of an ontology type:
+
+```json
+{ "path": ["baseUrl"] }
+```
+
+To navigate across an edge and then filter on a property of the related vertex:
+
+```json
+{ "path": ["leftEntity", "title"] }
+```
+
+The wildcard token `"*"` matches any element in a sequence. For example, to match any ancestor type's `baseUrl`:
+
+```json
+{ "path": ["type", "inheritsFrom", "*", "baseUrl"] }
+```
+
+### Parameter expressions
+
+A parameter expression binds a caller-supplied value:
+
+```json
+{ "parameter": "https://example.com/types/entity-types/person/" }
+```
+
+Three parameter types are supported: **strings**, **numbers**, and **booleans**. Depending on the path, specific formats may be required (e.g. a UUID, an ISO 8601 timestamp, or a versioned URL).
+
+### Conditions
+
+Conditions combine a path expression and a parameter expression (or `null`) using a comparison operator.
+
+| Condition | Description |
+|-----------|-------------|
+| `equal` | Path value equals the parameter (or `null`) |
+| `notEqual` | Path value does not equal the parameter (or `null`) |
+| `greater` | Path value is strictly greater than the parameter |
+| `greaterOrEqual` | Path value is greater than or equal to the parameter |
+| `less` | Path value is strictly less than the parameter |
+| `lessOrEqual` | Path value is less than or equal to the parameter |
+| `startsWith` | String path value starts with the parameter |
+| `endsWith` | String path value ends with the parameter |
+| `containsSegment` | String path value contains the parameter as a substring |
+| `exists` | The path exists on the vertex (takes a path expression, no parameter) |
+| `cosineDistance` | Vector cosine distance comparison (takes three expressions: embedding path, parameter vector, and threshold) |
+
+```json
+{
+  "equal": [
+    { "path": ["baseUrl"] },
+    { "parameter": "https://example.com/types/entity-types/person/" }
+  ]
+}
+```
+
+To check for a `null` value, pass `null` directly as the second operand:
+
+```json
+{
+  "notEqual": [{ "path": ["description"] }, null]
+}
+```
+
+### Composing filters
+
+Filters can be composed with `all` (logical AND), `any` (logical OR), and `not`.
+
+| Composition | Description |
+|-------------|-------------|
+| `all` | Matches if **all** conditions in the array are true. An empty `all` always matches. |
+| `any` | Matches if **at least one** condition in the array is true. An empty `any` never matches. |
+| `not` | Matches if the wrapped condition is false. |
+
+```json
+{
+  "filter": {
+    "all": [
+      {
+        "equal": [{ "path": ["title"] }, { "parameter": "Person" }]
+      },
+      {
+        "notEqual": [{ "path": ["description"] }, null]
+      },
+      {
+        "not": {
+          "any": [
+            {
+              "equal": [
+                { "path": ["leftEntity", "title"] },
+                { "parameter": "Bar" }
+              ]
+            },
+            {
+              "equal": [
+                { "path": ["leftEntity", "title"] },
+                { "parameter": "Baz" }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Graph Resolve Depths
+
+The `graphResolveDepths` object controls how far the subgraph is expanded from the root vertices, per **edge kind**. Each edge kind has an `outgoing` depth and (for some kinds) an `incoming` depth.
+
+A depth of `0` means no edges of that kind are traversed. A depth of `N` means the Graph follows chains of that edge kind up to `N` hops from the root. Each edge kind's chain is independent — reaching a vertex via one edge kind starts a fresh count for the next edge kind.
+
+```json
+{
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 1 },
+    "constrainsValuesOn": { "outgoing": 1 },
+    "constrainsPropertiesOn": { "outgoing": 2 },
+    "constrainsLinksOn": { "outgoing": 1 },
+    "constrainsLinkDestinationsOn": { "outgoing": 1 },
+    "isOfType": { "outgoing": 1 },
+    "hasLeftEntity": { "incoming": 1, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 1 }
+  }
+}
+```
+
+### Edge kinds
+
+<AccordionGroup>
+  <Accordion title="inheritsFrom">
+    An ontology type inherits from another ontology type via `allOf`. Following this edge includes ancestor types in the subgraph.
+
+    **Direction:** `outgoing` (from child to parent)
+
+    **Example use:** Retrieve all entity types in an inheritance chain, or find all entity types that ultimately inherit from the Block Protocol `Link` base type.
+  </Accordion>
+
+  <Accordion title="constrainsValuesOn">
+    A `PropertyType` or `DataType` references a `DataType` to constrain the values it accepts.
+
+    **Direction:** `outgoing` (from property type or data type to the referenced data type)
+
+    **Example use:** Include all data types referenced by a property type in the subgraph.
+  </Accordion>
+
+  <Accordion title="constrainsPropertiesOn">
+    An `EntityType` or `PropertyType` references a `PropertyType` to constrain which properties are allowed.
+
+    **Direction:** `outgoing` (from entity type or property type to the referenced property type)
+
+    **Example use:** Retrieve an entity type together with all its property type definitions, including transitively referenced property types.
+  </Accordion>
+
+  <Accordion title="constrainsLinksOn">
+    An `EntityType` references a link `EntityType` to constrain which kinds of links are permitted on entities of this type.
+
+    **Direction:** `outgoing` (from entity type to the link entity type)
+
+    **Example use:** Include all allowed link types for a given entity type.
+  </Accordion>
+
+  <Accordion title="constrainsLinkDestinationsOn">
+    An `EntityType` references another `EntityType` as the allowed destination for a certain link kind.
+
+    **Direction:** `outgoing` (from entity type to the target entity type)
+
+    **Example use:** Include all entity types that a link can point to.
+  </Accordion>
+
+  <Accordion title="isOfType">
+    An `Entity` is an instance of an `EntityType`.
+
+    **Direction:** `outgoing` (from entity to its entity type)
+
+    **Example use:** Include the entity type definitions for every entity in the result set.
+  </Accordion>
+
+  <Accordion title="hasLeftEntity">
+    A link `Entity` has another `Entity` on its left endpoint. The reverse of this edge is equivalent to saying an entity has an **outgoing** link entity.
+
+    **Direction:**
+    - `outgoing` — from the link entity to the left (source) entity
+    - `incoming` — from a source entity to all link entities originating from it
+
+    **Example use:** Set `hasLeftEntity: { incoming: 1, outgoing: 0 }` on a root entity query to include all links that start from the root entities.
+  </Accordion>
+
+  <Accordion title="hasRightEntity">
+    A link `Entity` has another `Entity` on its right endpoint. The reverse of this edge is equivalent to saying an entity has an **incoming** link entity.
+
+    **Direction:**
+    - `outgoing` — from the link entity to the right (target) entity
+    - `incoming` — from a target entity to all link entities pointing to it
+
+    **Example use:** Set `hasRightEntity: { incoming: 0, outgoing: 1 }` to include the target entity of each link.
+  </Accordion>
+</AccordionGroup>
+
+### Depth example
+
+Given the following graph:
+
+- `Entity1` links to `Entity2` via `Link1`
+- `Entity2` links to `Entity3` via `Link2`
+- `EntityType1` references `[EntityType2, PropertyType1]`
+- `EntityType2` references `[PropertyType2]`
+- `PropertyType1` references `[DataType2]`
+- `PropertyType2` references `[PropertyType3, DataType1]`
+- `PropertyType3` references `[PropertyType4, DataType3]`
+- `PropertyType4` references `[DataType3]`
+
+With a query rooted at `Entity1` and these depths:
+
+```json
+{
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 1 },
+    "constrainsPropertiesOn": { "outgoing": 3 },
+    "constrainsLinksOn": { "outgoing": 1 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 1, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 1 }
+  }
+}
+```
+
+The subgraph will include these additional vertices beyond `Entity1`:
+
+- `EntityType2`
+- `PropertyType1`, `PropertyType2`, `PropertyType3`
+- `DataType1`, `DataType2`
+- `Link1`, `Entity2`
+
+`Link2` is **not** included because it is 3 link-related edges away from `Entity1`, exceeding the depth of 1 for both `hasLeftEntity` (incoming) and `hasRightEntity` (outgoing).
+
+---
+
+## Common query examples
+
+<CodeGroup>
+
+```json Get a specific type by base URL and version
+{
+  "filter": {
+    "all": [
+      {
+        "equal": [
+          { "path": ["baseUrl"] },
+          { "parameter": "https://example.com/types/entity-types/person/" }
+        ]
+      },
+      {
+        "equal": [
+          { "path": ["version"] },
+          { "parameter": 1 }
+        ]
+      }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+```json Get all entities owned by a specific web
+{
+  "filter": {
+    "equal": [
+      { "path": ["webId"] },
+      { "parameter": "01234567-89ab-cdef-0123-456789abcdef" }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+```json Get all link entities
+{
+  "filter": {
+    "equal": [
+      { "path": ["type", "inheritsFrom", "*", "baseUrl"] },
+      {
+        "parameter": "https://blockprotocol.org/@blockprotocol/types/entity-type/link/"
+      }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+```json Get a link by source and target entity
+{
+  "filter": {
+    "all": [
+      {
+        "equal": [
+          { "path": ["leftEntity", "id"] },
+          { "parameter": "~web-id~source-entity-uuid" }
+        ]
+      },
+      {
+        "equal": [
+          { "path": ["rightEntity", "id"] },
+          { "parameter": "~web-id~target-entity-uuid" }
+        ]
+      }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+```json Get all entities linking to a specific entity (outgoing links)
+{
+  "filter": {
+    "equal": [
+      { "path": ["outgoingLinks", "uuid"] },
+      { "parameter": "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb" }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+```json Get all entities linked by a specific entity (incoming links)
+{
+  "filter": {
+    "equal": [
+      { "path": ["incomingLinks", "uuid"] },
+      { "parameter": "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb" }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+```json Get all archived entities
+{
+  "filter": {
+    "equal": [{ "path": ["archived"] }, { "parameter": true }]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+</CodeGroup>
+
+---
+
+## Supported path tokens
+
+For an exhaustive list of all valid path tokens per query type, generate the Rust documentation and refer to:
+
+- `DataTypeQueryPath`
+- `PropertyTypeQueryPath`
+- `EntityTypeQueryPath`
+- `EntityQueryPath`
+
+```bash
+cargo doc --package hash-graph-store --all-features --no-deps --open
+```
+
+---
+
+## Subgraph response structure
+
+Query endpoints that return a subgraph (`/entities/query/subgraph`, `/entity-types/query/subgraph`, etc.) respond with:
+
+```json
+{
+  "roots": [
+    { "baseId": "~web-id~entity-uuid", "revisionId": "..." }
+  ],
+  "vertices": {
+    "~web-id~entity-uuid": {
+      "kind": "entity",
+      "inner": { }
+    }
+  },
+  "edges": {
+    "~web-id~entity-uuid": {
+      "...revisionId": [
+        {
+          "kind": "isOfType",
+          "reversed": false,
+          "rightEndpoint": { "baseId": "https://example.com/types/entity-types/person/", "revisionId": 1 }
+        }
+      ]
+    }
+  },
+  "depths": { }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `roots` | Identifiers of the root vertices that matched the filter |
+| `vertices` | All graph elements included in the subgraph, keyed by their ID and revision |
+| `edges` | All edges between the included vertices |
+| `depths` | The resolve depths that were used to produce this subgraph |

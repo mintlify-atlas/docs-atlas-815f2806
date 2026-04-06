@@ -1,0 +1,166 @@
+---
+title: "Architecture Overview"
+description: "High-level overview of HASH's system architecture, component responsibilities, and how services communicate."
+---
+
+HASH is a multi-tenant, self-building knowledge graph platform built as a distributed system of cooperating services. The monorepo ships frontend, API, graph, AI workers, and infrastructure together under a unified development workflow.
+
+## Monorepo Structure
+
+The repository is organized into four top-level sections:
+
+| Directory | Purpose |
+|-----------|---------|
+| `/apps` | Runnable services: frontend, API, graph, workers, browser plugin |
+| `/libs` | Shared libraries: Rust crates, npm packages, internal utilities |
+| `/blocks` | Block Protocol blocks (self-contained UI components) |
+| `/infra` | Docker Compose configurations, Terraform infrastructure code |
+| `/tests` | End-to-end and integration tests spanning multiple services |
+
+## Service Inventory
+
+<CardGroup cols={2}>
+  <Card title="hash-frontend" icon="browser" href="https://github.com/hashintel/hash/tree/main/apps/hash-frontend">
+    Next.js web application. The primary user-facing interface for browsing entities, managing types, and running flows. Communicates exclusively with `hash-api` via GraphQL.
+  </Card>
+  <Card title="hash-api" icon="server" href="https://github.com/hashintel/hash/tree/main/apps/hash-api">
+    Node.js / Apollo GraphQL server. The public-facing API layer that aggregates calls to the graph, authentication provider, and external services. Exposes a single GraphQL endpoint consumed by the frontend.
+  </Card>
+  <Card title="hash-graph" icon="database" href="https://github.com/hashintel/hash/tree/main/apps/hash-graph">
+    High-performance Rust service exposing a REST API. The source of truth for all entity and type data. Backed by PostgreSQL with full bi-temporal versioning, structural queries, and an OpenAPI specification.
+  </Card>
+  <Card title="hash-ai-worker-ts" icon="robot" href="https://github.com/hashintel/hash/tree/main/apps/hash-ai-worker-ts">
+    TypeScript Temporal worker for AI-inference workflows. Runs LLM activities (OpenAI, Anthropic), web search, document analysis, and writes results back to the graph via the Graph REST API.
+  </Card>
+  <Card title="hash-integration-worker" icon="arrows-left-right" href="https://github.com/hashintel/hash/tree/main/apps/hash-integration-worker">
+    TypeScript Temporal worker that handles third-party data integrations. Consumes a Redis queue of entity change events and synchronises data with external services.
+  </Card>
+  <Card title="External Services" icon="boxes-stacked" href="https://github.com/hashintel/hash/tree/main/apps/hash-external-services">
+    Docker-managed infrastructure: PostgreSQL, Redis, Kratos (identity), Temporal (workflow orchestration), OpenTelemetry Collector, Grafana, Loki, Tempo.
+  </Card>
+</CardGroup>
+
+## Component Communication
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Browser                               │
+└────────────────────────────┬────────────────────────────────┘
+                             │  HTTP / WebSocket
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              hash-frontend  (Next.js :3000)                  │
+└────────────────────────────┬────────────────────────────────┘
+                             │  GraphQL (HTTP POST /graphql)
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                hash-api  (Apollo :5001)                      │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  GraphQL resolvers: knowledge/ ontology/ flows/ …      │ │
+│  └──────────────┬─────────────────┬──────────────────────┘ │
+└─────────────────┼─────────────────┼────────────────────────┘
+                  │  REST (HTTP)     │  Temporal SDK
+                  ▼                  ▼
+     ┌────────────────────┐  ┌──────────────────────┐
+     │  hash-graph (:4000)│  │  Temporal Server      │
+     │  (Rust / Axum)     │  │  (:7233)              │
+     │  PostgreSQL store  │  └─────────┬────────────┘
+     └────────────────────┘            │  Temporal SDK
+                  ▲                    ▼
+                  │ REST     ┌──────────────────────┐
+                  └──────────│  hash-ai-worker-ts   │
+                             │  hash-integration-   │
+                             │  worker              │
+                             └──────────────────────┘
+```
+
+### Request flow
+
+1. The **browser** loads the Next.js frontend served on port `3000`.
+2. The **frontend** issues GraphQL mutations/queries to `hash-api` on port `5001`.
+3. **`hash-api`** resolvers call the **`hash-graph`** REST API (port `4000`) for entity and type operations, and the **Kratos** identity service for authentication.
+4. Long-running or AI-heavy work is dispatched as **Temporal workflow** signals. The **`hash-ai-worker-ts`** and **`hash-integration-worker`** poll Temporal for tasks, execute them, and write results back to `hash-graph` via its REST API.
+
+## Technology Stack
+
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Frontend | Next.js (TypeScript) | React-based, SSR, Block Protocol host |
+| API gateway | Node.js, Apollo Server | GraphQL, session auth via Kratos cookies |
+| Graph layer | Rust, Axum | High-performance REST API, utoipa-generated OpenAPI |
+| AI workers | TypeScript, Temporal SDK | OpenAI & Anthropic integrations |
+| Database | PostgreSQL | Bi-temporal entity store, refinery migrations |
+| Cache / queues | Redis | Session store, integration event queue |
+| Workflows | Temporal | Durable execution for AI flows and integrations |
+| Identity | Kratos (ORY) | Self-service flows: login, registration, recovery |
+| Observability | OpenTelemetry, Grafana, Loki, Tempo | Distributed tracing, metrics, logs |
+
+## Authentication Flow
+
+Authentication is handled by **Kratos** (ORY), an open-source identity server. Kratos manages self-service flows (login, registration, recovery) and issues session cookies. `hash-api` validates sessions by calling the Kratos admin API and then maps the Kratos identity to an internal HASH actor ID. All calls to `hash-graph` carry an `X-Authenticated-User-Actor-Id` header that the graph uses for permission checks.
+
+## Observability
+
+All services emit **OpenTelemetry** telemetry (traces, metrics, structured logs). In development, an OpenTelemetry Collector container aggregates the data and forwards it to:
+
+- **Grafana** at `http://localhost:3001` — dashboards and alerting
+- **Tempo** — distributed trace storage
+- **Loki** — log aggregation
+- **Mimir** — metrics storage
+
+The `hash-graph` service is fully instrumented: every HTTP request and database query produces spans with semantic conventions, and log lines are correlated to traces via trace IDs.
+
+<Note>
+  To view traces locally, start external services with `yarn external-services up` and open Grafana at `http://localhost:3001`. The default anonymous login has read access to all dashboards.
+</Note>
+
+## Running the Full Stack Locally
+
+<Steps>
+  <Step title="Install prerequisites">
+    Ensure you have Git ≥ 2.17, Rust (matching `rust-toolchain.toml`), Docker ≥ 20.10, Docker Compose ≥ 2.17, and Node.js managed via `mise`.
+
+    ```bash
+    mise install
+    yarn install
+    ```
+  </Step>
+  <Step title="Create .env.local">
+    Add your secret keys for AI features. Non-AI development works with dummy values.
+
+    ```bash
+    OPENAI_API_KEY=your-openai-key
+    ANTHROPIC_API_KEY=your-anthropic-key
+    HASH_TEMPORAL_WORKER_AI_AWS_ACCESS_KEY_ID=your-aws-key-id
+    HASH_TEMPORAL_WORKER_AI_AWS_SECRET_ACCESS_KEY=your-aws-secret
+    ```
+  </Step>
+  <Step title="Start external services">
+    ```bash
+    yarn external-services up --wait
+    ```
+
+    This starts PostgreSQL, Redis, Kratos, Temporal, and the observability stack in Docker.
+  </Step>
+  <Step title="Start the application">
+    ```bash
+    yarn start
+    ```
+
+    Or start services individually in separate terminals:
+
+    ```bash
+    yarn start:graph     # hash-graph Rust service
+    yarn start:backend   # hash-api Node.js service
+    yarn start:frontend  # hash-frontend Next.js
+    yarn start:worker    # AI and integration workers
+    ```
+  </Step>
+  <Step title="Log in">
+    Three seed users are created automatically in development mode (password: `password`):
+
+    - `alice@example.com` — regular user
+    - `bob@example.com` — regular user
+    - `admin@example.com` — admin
+  </Step>
+</Steps>

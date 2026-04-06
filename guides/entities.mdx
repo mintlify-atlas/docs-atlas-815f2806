@@ -1,0 +1,131 @@
+---
+title: "Working with Entities"
+description: "Browse, create, edit, and link entities in your HASH knowledge graph using the entities page and the entity editor."
+---
+
+An **entity** is a single record in your HASH knowledge graph — a person, company, document, event, or any other real-world or conceptual thing. Every entity has at least one type that defines which properties it may carry and which other entities it can link to. This page covers the full lifecycle of an entity: creating, editing, linking, filtering, and archiving.
+
+## The entities page
+
+Navigate to **Entities** in the left sidebar to open the entities browser. This page lists every entity you have access to in your active workspace.
+
+The table shows each entity's type icon, label, type name, and creation date. You can sort by any column and switch between a flat list view and a filtered view for a single type.
+
+### Filtering by type
+
+To see only entities of a specific type, select that type from the sidebar under **Entities** or append `?entityTypeIdOrBaseUrl=<typeBaseUrl>` to the URL. The page title updates to the plural name of the selected type (for example, "People" when filtering by the `Person` type).
+
+When a type is selected, a **View Type** or **Edit Type** button appears in the top-right corner, linking directly to the type's definition page.
+
+<Tip>
+  Filtering by type is the fastest way to audit all instances of a particular schema. Select any entity type from the sidebar to jump straight to a pre-filtered view.
+</Tip>
+
+## Creating an entity
+
+<Steps>
+  <Step title="Open the new entity flow">
+    Click **Create new entity** (or the **+** button) on the entities page, or navigate to `/new/entity`. If you are already filtered to a specific type, the button reads "Create new `<TypeName>`" and skips type selection.
+  </Step>
+  <Step title="Select a type">
+    If no type is pre-selected, the entity creation page shows a type picker. Search for or browse available entity types and click the one you want. You can also create a new type at this point by clicking **Create new type**.
+
+    <Note>
+      Link entity types cannot be instantiated directly. Links are created from within the source entity's editor by adding an outgoing link. If you select a link type, HASH will display an error and ask you to create the link from the relevant entity instead.
+    </Note>
+  </Step>
+  <Step title="Fill in properties">
+    The entity editor opens with a **Properties** section listing every property defined by the selected type. Required properties are marked. Enter values for each field.
+
+    Property values are validated against the underlying data type (for example, `Text`, `Number`, or `Boolean`). HASH highlights any validation errors inline before you save.
+  </Step>
+  <Step title="Save the entity">
+    Click **Save** in the edit bar at the top of the page. The entity is written to the graph and assigned a UUID. You are redirected to the entity's permanent page at `/@{shortname}/entities/{uuid}`.
+  </Step>
+</Steps>
+
+## The entity editor
+
+Every entity has a dedicated editor page at `/@{shortname}/entities/{entity-uuid}`. The editor is divided into tabs:
+
+| Tab | Contents |
+|-----|----------|
+| **Properties** | All property values defined by the entity's type, with inline editing when you have write access. |
+| **Links** | Outgoing and incoming link entities, grouped by link type. |
+| **History** | A table of every edition of the entity, with timestamps and provenance metadata. |
+| **Claims** | AI-sourced claims about the entity, surfaced by research flows. |
+
+### Properties section
+
+The Properties section renders a table with one row per property. Empty properties are shown with a faint placeholder so you can see which fields the type expects. Click any value cell to edit it inline.
+
+A search icon in the section header lets you filter properties by name — useful for entity types with many properties.
+
+### Editing entity properties
+
+<Steps>
+  <Step title="Open the entity">
+    Navigate to the entity page or click any entity row in the entities table.
+  </Step>
+  <Step title="Click Edit">
+    Click the **Edit** button in the top-right, or click directly into any property cell. The edit bar appears at the top of the page.
+  </Step>
+  <Step title="Update values">
+    Type or select new values for any properties you want to change. Changes are staged locally until you save.
+  </Step>
+  <Step title="Save or discard">
+    Click **Save** in the edit bar to persist changes, or **Discard** to revert all staged edits. Each save creates a new immutable edition of the entity, preserving the full change history.
+  </Step>
+</Steps>
+
+## Creating links between entities
+
+Links in HASH are first-class entities that connect a **source** (left) entity to a **target** (right) entity via a typed link entity. You manage links from the source entity's editor.
+
+<Steps>
+  <Step title="Open the source entity">
+    Navigate to the entity you want to link from.
+  </Step>
+  <Step title="Go to the Links tab">
+    Click the **Links** tab (or scroll to the Links section). The **Outgoing links** table lists all link types the entity's type permits, including empty slots for links you have not yet created.
+  </Step>
+  <Step title="Add a link">
+    Click the **+** button in the row for the link type you want to create. A search field appears to find the destination entity. Search by name or paste an entity UUID.
+  </Step>
+  <Step title="Select the target entity">
+    Click the entity you want to link to. The link is staged as a draft until you save.
+  </Step>
+  <Step title="Save">
+    Click **Save** in the edit bar to persist the link. A link entity is created in the graph connecting the two entities.
+  </Step>
+</Steps>
+
+<Note>
+  The **Incoming links** section shows all entities that link to the current entity. These are read-only from the target entity's perspective — to remove an incoming link, open the source entity and delete the outgoing link from there.
+</Note>
+
+## Archiving entities
+
+Archiving removes an entity from active views without permanently deleting its data. Archived entities remain in the graph and can be unarchived later.
+
+To archive an entity:
+
+1. Open the entity page.
+2. Click the **three-dot menu** (context menu) in the top-right corner of the entity header.
+3. Select **Archive entity**.
+
+The entity is hidden from the default entity list. To see archived entities, check the **Include archived** option in the entities table filter (if available for your entity type).
+
+<Warning>
+  Archiving an entity type (not an entity instance) is a separate action available on the type page. Archiving a type hides it from type pickers and prevents new instances from being created, but existing entities of that type remain in the graph.
+</Warning>
+
+## Searching and filtering
+
+The entities table supports several ways to narrow your view:
+
+- **Type filter** — Select a type in the sidebar to show only entities of that type. The breadcrumb and page title update to reflect the filter.
+- **Version filter** — When you filter by a specific versioned type URL (e.g., `person/v/2`), the page title shows the version number (e.g., "Person v2") so you can distinguish between entity versions.
+- **Sort** — Click any column header to sort ascending or descending.
+
+The entities table renders with a virtualized layout for large datasets, so scrolling remains smooth even with thousands of rows.

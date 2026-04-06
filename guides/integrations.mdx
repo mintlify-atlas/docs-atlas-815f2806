@@ -1,0 +1,184 @@
+---
+title: "Integrations"
+description: "Connect HASH to external tools and services via Model Context Protocol (MCP) servers for Linear, Notion, GitHub, and the filesystem."
+---
+
+HASH provides a set of **Model Context Protocol (MCP) servers** that expose your data sources as structured context for AI coding assistants and agents. MCP is an open protocol for giving AI models access to external services; you configure a server once and your AI client — Cursor, Claude Code, or any MCP-compatible tool — can query it directly during a session.
+
+The HASH MCP servers are located in `apps/mcp/` in the HASH repository. Each server exposes a set of tools that AI assistants can call. Data retrieved through these servers can also be pushed back into the HASH graph by AI agents that have write access.
+
+<CardGroup cols={2}>
+  <Card title="Linear" icon="list-check" href="/guides/flows-and-goals">
+    List sprint issues, retrieve issue details with comments, and add comments — all from within your AI coding session.
+  </Card>
+  <Card title="Notion" icon="file-text" href="/guides/flows-and-goals">
+    Search Notion pages by title and retrieve page content as Markdown for use as AI context.
+  </Card>
+  <Card title="GitHub" icon="github" href="/developers/architecture">
+    Use the official GitHub MCP server with a personal access token to access repositories, pull requests, issues, and commits.
+  </Card>
+  <Card title="FileSystem" icon="folder" href="/developers/architecture">
+    Automatically configured via `.cursor/mcp.json` in the HASH repository — no manual setup required in Cursor.
+  </Card>
+</CardGroup>
+
+## Linear MCP server
+
+The Linear MCP server connects to the Linear API and exposes three tools:
+
+| Tool | Description |
+|------|-------------|
+| **List issues** | Lists issues in the current sprint, including title, description, assignee, and state. |
+| **Get issue details** | Retrieves a single issue with its full description and threaded comments. |
+| **Add comment** | Posts a comment to a specified issue. |
+
+### Prerequisites
+
+Generate an API key in Linear under **Settings → Security & access**.
+
+The MCP server must be built before it can be used. This happens automatically when you run `yarn` (via the `postinstall` script). If `dist/main.js` is missing, run `yarn build` in `apps/mcp/linear/`.
+
+### Setting up Linear MCP in Claude Code
+
+<Steps>
+  <Step title="Set the API key">
+    Add the following line to the `.env.local` file in the root of the HASH repository:
+
+    ```bash
+    MCP_LINEAR_API_KEY=YOUR_INTEGRATION_SECRET
+    ```
+  </Step>
+  <Step title="Register the server with Claude Code">
+    Run the following command from the repository root:
+
+    ```bash
+    claude mcp add linear yarn workspace @apps/linear-mcp start
+    ```
+
+    <Warning>
+      The Claude Code MCP config is saved relative to the directory you ran the command from. If you move to a different directory, you will need to re-add the server.
+    </Warning>
+  </Step>
+</Steps>
+
+### Setting up Linear MCP in Cursor
+
+Cursor executes MCP servers outside the repository context, so it does not load environment variables automatically and requires an absolute path to the built file.
+
+<Steps>
+  <Step title="Get the absolute path">
+    Right-click `apps/mcp/linear/dist/main.js` in your file tree and copy the absolute path.
+  </Step>
+  <Step title="Open Cursor MCP settings">
+    Go to **Settings → Cursor Settings → MCP → Add MCP server**.
+  </Step>
+  <Step title="Configure the server">
+    Enter the following values:
+
+    | Field | Value |
+    |-------|-------|
+    | Name | `Linear` |
+    | Type | `command` |
+    | Command | `env MCP_LINEAR_API_KEY=YOUR_INTEGRATION_SECRET node /absolute/path/to/apps/mcp/linear/dist/main.js` |
+
+    Replace `YOUR_INTEGRATION_SECRET` with your Linear API key and update the path to match your local setup.
+  </Step>
+</Steps>
+
+## Notion MCP server
+
+The Notion MCP server exposes two tools:
+
+| Tool | Description |
+|------|-------------|
+| **Search pages** | Searches Notion pages by title and returns matching page metadata. |
+| **Get page content** | Retrieves the full content of a Notion page as Markdown. |
+
+<Note>
+  The Notion integration can only access pages that have been explicitly shared with the integration via the Notion page context menu. Sharing a parent page automatically shares all of its child pages.
+</Note>
+
+### Prerequisites
+
+1. Create a [Notion integration](https://www.notion.so/profile/integrations) with **Read content** capability.
+2. Copy the integration's API key.
+3. Share the Notion pages (or workspaces) you want the server to access with the integration.
+
+Build the server if needed by running `yarn build` in `apps/mcp/notion/`.
+
+### Setting up Notion MCP in Claude Code
+
+<Steps>
+  <Step title="Set the API key">
+    Add the following line to `.env.local` in the repository root:
+
+    ```bash
+    MCP_NOTION_API_KEY=YOUR_INTEGRATION_SECRET
+    ```
+  </Step>
+  <Step title="Register the server">
+    ```bash
+    claude mcp add notion yarn workspace @apps/notion-mcp start
+    ```
+  </Step>
+</Steps>
+
+### Setting up Notion MCP in Cursor
+
+<Steps>
+  <Step title="Get the absolute path">
+    Right-click `apps/mcp/notion/dist/main.js` and copy the absolute path.
+  </Step>
+  <Step title="Add the server in Cursor">
+    Go to **Settings → Cursor Settings → MCP → Add MCP server** and enter:
+
+    | Field | Value |
+    |-------|-------|
+    | Name | `Notion` |
+    | Type | `command` |
+    | Command | `env MCP_NOTION_API_KEY=YOUR_INTEGRATION_SECRET node /absolute/path/to/apps/mcp/notion/dist/main.js` |
+  </Step>
+</Steps>
+
+## GitHub MCP server
+
+HASH uses the official [`@modelcontextprotocol/server-github`](https://github.com/modelcontextprotocol/servers) package for GitHub integration. No custom server is required.
+
+<Steps>
+  <Step title="Generate a personal access token">
+    Go to **GitHub → Profile → Developer Settings → Personal access tokens**.
+
+    You can use either:
+    - **Classic token** with the `repo` scope.
+    - **Fine-grained token** with specific repository access and scopes such as `Contents`, `Commits`, `Pull Requests`, and `Issues`.
+  </Step>
+  <Step title="Add the server in Cursor">
+    Go to **Settings → Cursor Settings → MCP → Add MCP server** and configure:
+
+    | Field | Value |
+    |-------|-------|
+    | Name | `github` |
+    | Type | `command` |
+    | Command | `env GITHUB_PERSONAL_ACCESS_TOKEN=your_token npx -y @modelcontextprotocol/server-github` |
+
+    Replace `your_token` with the personal access token you generated.
+  </Step>
+</Steps>
+
+## FileSystem MCP
+
+The FileSystem MCP server gives AI assistants structured access to the local filesystem. In the HASH repository, this is configured automatically for Cursor via the `.cursor/mcp.json` file at the repository root — no manual setup is required.
+
+To verify it is active, open **Settings → Cursor Settings → MCP** and check that the FileSystem server appears in the list.
+
+## How integrations push data into HASH
+
+MCP servers expose data as read-only context by default. To persist retrieved data into your HASH knowledge graph, AI agents running flows (see [Flows and Goals](/guides/flows-and-goals)) can use the information surfaced by MCP tools as inputs to the `inferEntitiesFromContent` or `researchEntities` actions, which then call `persistEntities` to write structured entities back to the graph.
+
+For example, an AI agent could:
+
+1. Query the Linear MCP server to retrieve all issues in the current sprint.
+2. Pass the issue data to `inferEntitiesFromContent` to extract `Task` entities.
+3. Call `persistEntities` to write those tasks into HASH, linking them to the relevant `Project` entity.
+
+This pipeline allows external tool data to flow into your knowledge graph automatically, keeping it synchronized with your team's work.

@@ -1,0 +1,380 @@
+---
+title: "Graph API"
+description: "Reference for the hash-graph REST API: endpoints, structural queries, authorization, database migrations, and observability."
+---
+
+The **HASH Graph** is a high-performance Rust service that acts as the persistent store for all entities and types. It exposes a RESTful HTTP API with a generated OpenAPI specification and full bi-temporal versioning support.
+
+The graph binary is located at `apps/hash-graph`. Its core library crates live under `libs/@local/graph/`.
+
+## Architecture
+
+The Graph service is composed of five sub-systems:
+
+| Component | Responsibility |
+|-----------|---------------|
+| **REST API Server** | Axum HTTP server serving the OpenAPI-specified endpoints |
+| **PostgreSQL Store** | Persistent storage with ACID transactions and connection pooling |
+| **Authorization Layer** | Fine-grained permission checks on every operation |
+| **Type Fetcher Service** | Fetches and caches remote type definitions from blockprotocol.org via tarpc RPC |
+| **Telemetry Integration** | OpenTelemetry distributed tracing, metrics, and structured logging |
+
+<Note>
+  All HTTP requests and database queries are automatically instrumented with OpenTelemetry spans. In local development, traces are viewable in Grafana at `http://localhost:3001`. Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` to forward telemetry to the local collector.
+</Note>
+
+## OpenAPI Specification
+
+The OpenAPI spec is generated at compile time from Rust source annotations using [`utoipa`](https://github.com/juhaku/utoipa). Complex JSON schemas (including the `Status` error format) are maintained as static JSON files in `libs/@local/graph/src/api/rest/json_schemas/`.
+
+### Generating the TypeScript client
+
+The frontend and API consume a typed TypeScript client generated from the OpenAPI spec. Re-generate it after any API change:
+
+```bash
+# From apps/hash-graph
+cargo run --bin openapi-spec-generator
+```
+
+### Generating Rust documentation
+
+```bash
+# Single crate
+cargo doc --package hash-graph-store --all-features --no-deps --open
+
+# All graph crates
+cargo doc --workspace --all-features --no-deps --open
+```
+
+## Endpoint Groups
+
+The graph API is organised into the following route groups:
+
+### Entities
+
+Entities are the core data unit of HASH — typed records with bi-temporal metadata.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/entities` | Create a single entity |
+| `POST` | `/entities/bulk` | Create multiple entities in one request |
+| `PATCH` | `/entities` | Patch (update) an entity |
+| `POST` | `/entities/diff` | Diff two entity editions |
+| `POST` | `/entities/validate` | Validate an entity against its type without persisting |
+| `POST` | `/entities/embeddings` | Update vector embeddings for entities |
+| `POST` | `/entities/permissions` | Check actor permissions on a set of entities |
+| `POST` | `/entities/query` | Structural query returning a flat entity list |
+| `POST` | `/entities/query/subgraph` | Structural query returning a resolved subgraph |
+| `POST` | `/entities/query/count` | Count entities matching a structural query |
+
+### Entity Types
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/entity-types` | Create an entity type |
+| `PUT` | `/entity-types` | Update an entity type |
+| `PUT` | `/entity-types/bulk` | Update multiple entity types |
+| `POST` | `/entity-types/permissions` | Check actor permissions on entity types |
+| `POST` | `/entity-types/query` | Query entity types |
+| `POST` | `/entity-types/query/multi` | Fetch closed (fully-resolved) multi-entity types |
+| `POST` | `/entity-types/query/subgraph` | Query entity types as a subgraph |
+| `POST` | `/entity-types/load` | Load an external (remote) entity type |
+| `PUT` | `/entity-types/archive` | Archive an entity type |
+| `PUT` | `/entity-types/unarchive` | Unarchive an entity type |
+| `POST` | `/entity-types/embeddings` | Update vector embeddings for entity types |
+
+### Property Types and Data Types
+
+Property types and data types follow the same CRUD pattern as entity types, with equivalent `query`, `archive`, `unarchive`, `load`, and `embeddings` routes under `/property-types` and `/data-types` respectively.
+
+### Principals and Authorization
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/principals` | Create a principal (actor/group/role) |
+| `POST` | `/permissions` | Evaluate permissions for a principal |
+
+## Authentication
+
+Every request must carry an `X-Authenticated-User-Actor-Id` header containing the UUID of the actor performing the operation. The graph's authorization layer evaluates the actor's permissions against the requested resources before executing any store operation.
+
+```bash
+curl -X POST http://localhost:4000/entities/query \
+  -H "Content-Type: application/json" \
+  -H "X-Authenticated-User-Actor-Id: <actor-uuid>" \
+  -d '{ "filter": { "all": [] }, "graphResolveDepths": { ... } }'
+```
+
+## Structural Queries
+
+Structural queries are the primary mechanism for reading data from the graph. A query returns a **subgraph** — a set of vertices (entities/types) and edges determined by a filter and a set of traversal depths.
+
+### Query shape
+
+```json
+{
+  "filter": { ... },
+  "graphResolveDepths": { ... }
+}
+```
+
+### Filters
+
+Filters select the **root vertices** of the subgraph. A filter is composed of paths (sequences of graph steps) and parameters (user-provided values).
+
+<Tabs>
+  <Tab title="Equality">
+    ```json
+    {
+      "filter": {
+        "equal": [
+          { "path": ["baseUrl"] },
+          { "parameter": "https://example.com/types/entity-type/person/" }
+        ]
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Compound (all / any / not)">
+    ```json
+    {
+      "filter": {
+        "all": [
+          {
+            "equal": [{ "path": ["title"] }, { "parameter": "Foo" }]
+          },
+          {
+            "notEqual": [{ "path": ["description"] }, null]
+          },
+          {
+            "not": {
+              "any": [
+                { "equal": [{ "path": ["leftEntity", "title"] }, { "parameter": "Bar" }] },
+                { "equal": [{ "path": ["leftEntity", "title"] }, { "parameter": "Baz" }] }
+              ]
+            }
+          }
+        ]
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Filter by web (owner)">
+    ```json
+    {
+      "filter": {
+        "equal": [
+          { "path": ["webId"] },
+          { "parameter": "<account-uuid>" }
+        ]
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="All archived entities">
+    ```json
+    {
+      "filter": {
+        "equal": [{ "path": ["archived"] }, { "parameter": true }]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+An empty `all` filter matches every vertex. An empty `any` filter matches nothing.
+
+### Graph Resolve Depths
+
+Depths control how many edges beyond the root vertices are traversed for each **edge kind**.
+
+| Edge kind | What it traverses |
+|-----------|------------------|
+| `inheritsFrom` | Ontology type inheritance chains |
+| `constrainsValuesOn` | PropertyType / DataType → DataType references |
+| `constrainsPropertiesOn` | EntityType / PropertyType → PropertyType references |
+| `constrainsLinksOn` | EntityType → link EntityType references |
+| `constrainsLinkDestinationsOn` | EntityType → target EntityType references |
+| `hasLeftEntity` | Link entity → its left (source) entity |
+| `hasRightEntity` | Link entity → its right (target) entity |
+| `isOfType` | Entity → its EntityType |
+
+Each edge kind accepts `{ "outgoing": N }` and/or `{ "incoming": N }`. A depth of `0` disables traversal for that edge kind. **All edge kinds must be specified on every request.**
+
+```json
+{
+  "filter": { "all": [] },
+  "graphResolveDepths": {
+    "inheritsFrom":              { "outgoing": 0 },
+    "constrainsValuesOn":        { "outgoing": 1 },
+    "constrainsPropertiesOn":    { "outgoing": 3 },
+    "constrainsLinksOn":         { "outgoing": 1 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType":                  { "outgoing": 1 },
+    "hasLeftEntity":             { "incoming": 1, "outgoing": 0 },
+    "hasRightEntity":            { "incoming": 0, "outgoing": 1 }
+  }
+}
+```
+
+### Common query patterns
+
+<AccordionGroup>
+  <Accordion title="Get a specific type by base URL and version">
+    ```json
+    {
+      "filter": {
+        "all": [
+          {
+            "equal": [
+              { "path": ["baseUrl"] },
+              { "parameter": "https://example.com/types/entity-type/person/" }
+            ]
+          },
+          {
+            "equal": [
+              { "path": ["version"] },
+              { "parameter": 1 }
+            ]
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="Get all link entities">
+    ```json
+    {
+      "filter": {
+        "equal": [
+          { "path": ["type", "inheritsFrom", "*", "baseUrl"] },
+          { "parameter": "https://blockprotocol.org/@blockprotocol/types/entity-type/link/" }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="Get link by source and target entity">
+    ```json
+    {
+      "filter": {
+        "all": [
+          {
+            "equal": [
+              { "path": ["leftEntity", "id"] },
+              { "parameter": "<source-entity-uuid>" }
+            ]
+          },
+          {
+            "equal": [
+              { "path": ["rightEntity", "id"] },
+              { "parameter": "<target-entity-uuid>" }
+            ]
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="Get all entities linking to a specific entity">
+    ```json
+    {
+      "filter": {
+        "equal": [
+          { "path": ["outgoingLinks", "uuid"] },
+          { "parameter": "<entity-uuid>" }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Status Format
+
+Non-OK API responses use the `Status` format defined in `libs/@local/status`. The JSON schema is maintained at `libs/@local/graph/src/api/rest/json_schemas/status.json`.
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "Entity with UUID '...' does not exist",
+  "contents": []
+}
+```
+
+## Database Management
+
+Schema migrations are managed with [`refinery`](https://github.com/rust-db/refinery). Migration files live in `postgres_migrations/` and follow the naming convention `V{number}__{description}.sql`.
+
+<Steps>
+  <Step title="Apply migrations">
+    ```bash
+    cargo run --bin hash-graph -- migrate
+    ```
+  </Step>
+  <Step title="Migration naming rules">
+    - File name must start with `V` followed by an integer
+    - The integer determines execution order
+    - Migrations are incremental — there are no rollback scripts
+  </Step>
+</Steps>
+
+<Warning>
+  Never modify an already-applied migration file. Always create a new migration with the next sequential number.
+</Warning>
+
+## Running the Graph Locally
+
+<Steps>
+  <Step title="Start external services">
+    ```bash
+    # From repository root
+    yarn external-services up --wait
+    ```
+  </Step>
+  <Step title="Apply database migrations">
+    ```bash
+    cargo run --bin hash-graph -- migrate
+    ```
+  </Step>
+  <Step title="Start the Graph server">
+    ```bash
+    cargo run --bin hash-graph -- server
+    ```
+  </Step>
+  <Step title="Start the Type Fetcher (optional)">
+    Required for loading remote types from blockprotocol.org.
+
+    ```bash
+    cargo run --bin hash-graph -- type-fetcher
+    ```
+  </Step>
+</Steps>
+
+Alternatively, use the integrated development command that handles all of the above:
+
+```bash
+yarn start:graph
+```
+
+### Build and test
+
+```bash
+# Debug build
+cargo build
+
+# Release build
+cargo build --release
+
+# Run all tests (requires a running database)
+cargo test
+
+# Run tests for a specific crate
+cargo test --package hash-graph-postgres-store
+
+# Lint
+cargo clippy --all-features
+
+# Format
+cargo fmt
+```

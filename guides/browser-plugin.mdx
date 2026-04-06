@@ -1,0 +1,109 @@
+---
+title: "Browser Plugin"
+description: "Install the HASH browser extension to capture structured entities from any web page directly into your knowledge graph."
+---
+
+The HASH browser plugin is a browser extension that lets you extract structured data from any web page and push it into your HASH knowledge graph without leaving the browser. When you visit a page containing relevant information, you can trigger the plugin to analyze the content, select which entity types to extract, and save the results — all in a few clicks.
+
+The plugin works by sending the current page's content to the HASH API, which runs the `inferEntitiesFromContent` flow action to identify and structure entities matching your chosen types. Discovered entities can be created as drafts for review or published directly.
+
+## Supported browsers
+
+- Google Chrome
+- Mozilla Firefox
+- Microsoft Edge
+- Arc Browser
+
+<Note>
+  Safari and iOS Safari support is planned for a future release.
+</Note>
+
+## Installing the plugin
+
+<Steps>
+  <Step title="Download the extension">
+    Download the extension package for your browser from the HASH website or your browser's extension store when it becomes available at public beta. The plugin is currently distributed directly for development and early-access use.
+  </Step>
+  <Step title="Load the extension in Chrome or Edge">
+    1. Open [chrome://extensions](chrome://extensions) (Chrome) or `edge://extensions` (Edge).
+    2. Enable **Developer mode** using the toggle in the top-right corner.
+    3. Click **Load unpacked**.
+    4. Select the `build` folder from the downloaded extension package.
+
+    The HASH extension icon appears in your browser toolbar.
+  </Step>
+  <Step title="Load the extension in Firefox">
+    1. Open [about:debugging#/runtime/this-firefox](about:debugging#/runtime/this-firefox).
+    2. Click **Load Temporary Add-on...**.
+    3. Select the `manifest.json` file inside the `build` folder.
+
+    <Warning>
+      In Firefox, the extension is loaded as a temporary add-on and will be removed when you restart Firefox. For a persistent installation, use a signed extension package when available.
+    </Warning>
+  </Step>
+  <Step title="Grant required permissions (Firefox only)">
+    Firefox requires two permissions before the extension will work. Go to **Tools → Add-ons**, find the HASH Browser Extension, and enable:
+
+    1. **"Access your data for sites in the hash.ai domain"** — required so that cookies are sent to the HASH API for authentication.
+    2. **"Access your data for all web sites"** — required so that the extension can read page content from any site you visit.
+  </Step>
+  <Step title="Sign in to your HASH account">
+    Click the HASH extension icon in your browser toolbar to open the plugin popup. If you are not yet signed in, the popup prompts you to sign in via [app.hash.ai](https://app.hash.ai). Authentication uses your existing HASH session cookie — once you sign in through the browser, the extension picks up the session automatically.
+  </Step>
+</Steps>
+
+## Using the plugin
+
+Once installed and signed in, the plugin adds a popup accessible from the browser toolbar.
+
+### Capturing entities from a page
+
+1. Navigate to any web page containing information you want to capture — a company profile, a news article, a directory listing, etc.
+2. Click the **HASH** icon in the browser toolbar to open the popup.
+3. In the popup, select the **entity types** you want the AI to extract from the current page. For example, select `Person` and `Organization` to extract people and companies mentioned on the page.
+4. Choose whether to **create entities as drafts** (they appear in your HASH workspace for review before publishing) or publish them immediately.
+5. Click **Analyze page**. The plugin sends the page content to the HASH API, which runs the entity extraction flow.
+6. When the flow completes, the popup shows the proposed entities. You can review them, discard any that are incorrect, and accept the rest.
+
+Accepted entities are saved to your active HASH workspace and appear on the **Entities** page and in any **Actions** queue if they were created as drafts.
+
+### Reviewing draft entities
+
+If you chose to create entities as drafts, they land in the **Actions** page (`/actions`) in the HASH web UI under **Draft entities**. From there you can:
+
+- Accept individual entities to publish them to the graph.
+- Discard entities that were incorrectly extracted.
+- Bulk-accept or bulk-discard a selection.
+
+## Settings and configuration
+
+### Automated tab
+
+The plugin popup includes an **Automated** tab (visible in development mode; it will be labeled **Settings** in production builds). This tab lets you:
+
+- **Change the target API** — Override the API endpoint the extension sends requests to. This is useful in development when you want to point the plugin at a local HASH instance (`http://localhost:5001`) instead of the production API at `https://app.hash.ai`.
+
+<Note>
+  The target frontend URL is not configurable in the plugin. If you change the API endpoint during development, manually replace the frontend URL in any links the plugin generates (for example, swap `https://app.hash.ai` for `http://localhost:3000`).
+</Note>
+
+### Automated browsing
+
+The **Automated** settings also allow you to configure which domains the plugin monitors for automatic inference. When automated browsing is enabled for a domain, the plugin passively watches page content and surfaces suggested entities without requiring you to manually trigger extraction.
+
+## Debugging the plugin
+
+The plugin runs in three separate browser contexts. For Chrome:
+
+| Context | How to debug |
+|---------|-------------|
+| **Background script** | Open [chrome://extensions](chrome://extensions), find HASH Browser Extension, click **Inspect**. |
+| **Content script** | Use the DevTools console on the page being viewed. |
+| **Popup** | Right-click the popup window and click **Inspect**. |
+| **Options page** | Right-click the options page and click **Inspect**. |
+
+For Firefox, the background script is accessible via [about:debugging#/runtime/this-firefox](about:debugging#/runtime/this-firefox) > HASH Browser Extension > **Inspect**. The popup requires the [Browser Toolbox](https://firefox-source-docs.mozilla.org/devtools-user/browser_toolbox/index.html).
+
+<Tip>
+  When debugging the background script, note that `console.log` output appears only in the background script inspector context, not in the page DevTools. Open the background script inspector directly from the extensions management page.
+</Tip>

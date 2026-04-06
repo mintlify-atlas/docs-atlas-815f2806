@@ -1,0 +1,134 @@
+---
+title: "Flows and Goals"
+description: "Run AI-powered research workflows and set up standing goals to automatically enrich your HASH knowledge graph."
+---
+
+HASH provides two mechanisms for putting AI to work on your knowledge graph: **flows** and **goals**. Flows are discrete, durable AI workflows you can run on demand. Goals are standing objectives that you define once and that run continuously, automatically discovering and persisting new information as it becomes available.
+
+## What are flows?
+
+A flow is a multi-step AI workflow orchestrated by [Temporal](https://temporal.io). Each step is a discrete action — searching the web, fetching a page, extracting entities from content, or writing results to an external system. Because flows run on Temporal, they are durable: if a step fails or a worker restarts, the flow resumes from where it left off rather than starting over.
+
+Flows are defined as a series of **steps**, each with a named `actionDefinitionId` that maps to a worker activity. Steps can pass outputs from one step as inputs to the next, forming a pipeline.
+
+Every flow has:
+
+- A **name** and **description** visible in the flows table.
+- A **trigger** that specifies what inputs are required to start it.
+- One or more **steps**, each performing a specific action.
+- A **last run** timestamp showing when it was most recently executed.
+
+## Built-in flow types
+
+<CardGroup cols={2}>
+  <Card title="Research and save to HASH" icon="magnifying-glass" href="/concepts/ai-agents">
+    Discovers entities of specified types according to a research brief and saves them directly to your HASH knowledge graph. Optionally creates entities as drafts for human review before publishing.
+  </Card>
+  <Card title="Research task" icon="bolt" href="/concepts/ai-agents">
+    Conducts research on a topic, provides expert analysis on the discovered data, and writes results to a Google Sheet. Combines `researchEntities`, `persistEntities`, `answerQuestion`, and `writeGoogleSheet` steps.
+  </Card>
+  <Card title="Analyze webpage" icon="globe" href="/guides/browser-plugin">
+    Triggered manually via the browser plugin. Extracts entities of requested types from the content of a specific web page and proposes them to your graph. Powered by the `inferEntitiesFromContent` action.
+  </Card>
+  <Card title="Web search" icon="search" href="/concepts/ai-agents">
+    Generates and executes web queries, fetches and summarizes page content, then extracts and persists structured entities. Used as a sub-routine within research flows.
+  </Card>
+</CardGroup>
+
+### Core flow actions
+
+The following actions are available as building blocks for flows:
+
+| Action | Description |
+|--------|-------------|
+| `researchEntities` | Discovers entities of requested types using a coordinating AI agent that plans and delegates web research sub-tasks. |
+| `inferEntitiesFromContent` | Extracts structured entities from provided content (a web page, document, or text) using a specified set of entity types. |
+| `persistEntities` | Writes proposed entities to the HASH graph, optionally creating them as drafts for human review. |
+| `answerQuestion` | Synthesizes an answer to a research question from a set of discovered entities. |
+| `webSearch` | Executes a web search query and returns a list of result URLs and snippets. |
+| `getWebPageByUrl` | Fetches the full content of a web page given its URL. |
+| `writeGoogleSheet` | Writes structured data to a Google Sheet. |
+
+## What are goals?
+
+A goal is a standing research objective. You describe what you want to know — for example, "Track all publicly announced funding rounds for Series A startups in the climate tech space" — and specify which entity types should be used to represent the results. HASH runs the corresponding research flow automatically, persisting discovered entities to your graph.
+
+Goals are visible on the **Goals** page (`/goals`), grouped into **Active** (currently running) and **Archived** (completed or stopped) sections. Each goal shows:
+
+- Its name (derived from the flow run)
+- The workspace it belongs to
+- Status (`Running`, `Completed`, `Failed`, etc.)
+- Last event timestamp
+- Count of open input requests awaiting human review
+
+<Note>
+  Goals use the same underlying flow infrastructure as manually triggered flows. The distinction is that goals are intended to run persistently, with HASH re-triggering them as needed to keep your graph up to date.
+</Note>
+
+## Running a flow manually
+
+<Steps>
+  <Step title="Open the flows page">
+    Click **Flows** in the left sidebar to open the flows browser at `/flows`. The table lists all available flow definitions, their descriptions, and the last time each was run.
+  </Step>
+  <Step title="Select a flow">
+    Click the name of the flow you want to run. This opens the flow's detail page showing its definition, steps, and run history.
+  </Step>
+  <Step title="Provide inputs">
+    Flows require inputs defined by their trigger. For a research flow this typically includes:
+
+    - **Research guidance** — A natural language description of what to research.
+    - **Entity types** — The entity types you want the flow to discover and persist.
+    - **Create as draft** — Whether to create discovered entities as drafts (recommended for first runs so you can review results before publishing).
+  </Step>
+  <Step title="Start the flow">
+    Click **Run** (or the equivalent submit button). HASH starts a Temporal workflow run and redirects you to the run's monitoring page.
+  </Step>
+  <Step title="Monitor progress">
+    The run page shows each step's status in real time. Steps cycle through `pending`, `running`, and `completed` (or `failed`). If a step requires human input, you see an open input request you can respond to.
+  </Step>
+</Steps>
+
+## Setting up a goal
+
+<Steps>
+  <Step title="Open the new goal page">
+    Click **Goals** in the left sidebar and then click **Create goal** in the top-right, or navigate directly to `/goals/new`.
+  </Step>
+  <Step title="Write a research brief">
+    In the **Goal** field, describe what you want HASH to research in plain language. Be specific about scope, recency, and the kinds of entities you expect.
+
+    Example: `"Find all publicly listed biotech companies headquartered in Europe that have announced clinical trial results in the past six months."`
+  </Step>
+  <Step title="Select entity types">
+    Choose the entity types the flow should discover. For the example above, you might select `Company` and `Clinical Trial`. The flow uses these types to structure and validate its output.
+  </Step>
+  <Step title="Choose a workspace">
+    Select which workspace (personal or organizational) the discovered entities should be saved to.
+  </Step>
+  <Step title="Configure deliverables (optional)">
+    Optionally attach a deliverable — a Markdown report or Google Sheet — where the flow will also write a structured summary of its findings.
+
+    - **Markdown report** — Generates a document entity in HASH summarizing the research.
+    - **Google Sheet** — Writes rows to a specified Google Sheet using a connected Google account.
+  </Step>
+  <Step title="Configure data sources (optional)">
+    The **Internet** settings let you specify which domains the browser plugin should prioritize when the flow scrapes pages. The **Files** settings allow you to attach uploaded file entities as additional context for the research.
+  </Step>
+  <Step title="Submit the goal">
+    Click **Start research** to trigger the flow. You are redirected to the flow run's monitoring page. The goal appears in the **Active** section of the Goals list while it is running.
+  </Step>
+</Steps>
+
+## Monitoring flows
+
+The **Workers** section of the HASH sidebar provides two monitoring views:
+
+- **Flows** (`/flows`) — Lists all flow definitions and their most recent run timestamp.
+- **Goals** (`/goals`) — Lists active and archived goal runs with status, last event time, and open input requests.
+
+Click any goal row to open its detailed run view, which shows a step-by-step log of what the coordinating agent did: queries it made, pages it visited, entities it proposed, and any questions it asked for human clarification.
+
+<Tip>
+  If a flow raises a human-input request (for example, to ask whether an ambiguous entity should be created), you will see an open input request badge on the Goals page. Click through to review and answer the question so the flow can continue.
+</Tip>

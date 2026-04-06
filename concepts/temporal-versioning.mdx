@@ -1,0 +1,215 @@
+---
+title: "Temporal Versioning"
+description: "How HASH tracks the full history of every entity using a bi-temporal model: decision time and transaction time."
+---
+
+HASH maintains a complete, immutable history of every entity and type in the knowledge graph. Rather than overwriting data when it changes, HASH uses a **bi-temporal model** that records not only what the data is, but _when it was known to be true_ and _when it was recorded_. This enables point-in-time queries, complete audit trails, and historical analysis without any data loss.
+
+The bi-temporal model is implemented in the `hash-graph-temporal-versioning` Rust crate, which provides all the types and supporting logic for tracking history across the graph.
+
+---
+
+## Two independent time axes
+
+Every piece of data in HASH is tracked along two independent time axes:
+
+<Tabs>
+  <Tab title="Decision time">
+    **Decision time** represents when a fact is asserted to be true in the real world — when the decision was made, or when the state it describes was understood to hold.
+
+    This is the "business time" or "valid time" dimension. It answers the question: _"When was this fact true?"_
+
+    Examples:
+    - An employee's start date: the decision time would be the date they actually started, even if that information was entered into the system later.
+    - Correcting a historical record: you can record that something was true last year by setting decision time to a past date.
+
+    Decision time can be set explicitly by the actor inserting data, making it possible to retroactively record facts about the past or pre-record facts about the future.
+  </Tab>
+  <Tab title="Transaction time">
+    **Transaction time** represents when the data was physically written to the database — the system's own clock at the moment of insertion.
+
+    This is the "system time" or "audit time" dimension. It answers the question: _"When did HASH learn about this fact?"_
+
+    Transaction time is always set by the system and cannot be set manually. It is monotonically increasing and forms an immutable record of every write operation.
+  </Tab>
+</Tabs>
+
+---
+
+## Visualizing the two axes
+
+Consider a single entity property — say, a person's job title. The bi-temporal model records it on a two-dimensional grid:
+
+```
+Transaction time →
+                 ──────────────────────────────────────────▶
+Decision time  │
+               │   [Engineer, 2023-01-01 to 2024-06-01]
+               │         written on 2023-01-05
+               │
+               │   [Senior Engineer, 2024-06-01 to ∞]
+               │         written on 2024-06-02
+               │
+               │   (correction added 2024-08-01: was Lead Engineer from 2024-03-01)
+               │   [Lead Engineer, 2024-03-01 to 2024-06-01]
+               │         written on 2024-08-01
+               ▼
+```
+
+At any point, you can query the graph along either axis:
+- _"What did HASH know about this person on 2024-05-01?"_ (query by transaction time)
+- _"What was this person's title as of 2024-04-15?"_ (query by decision time)
+- _"What did HASH believe about this person's title on 2024-05-01, as of 2024-07-01?"_ (combined query)
+
+---
+
+## Entity editions
+
+Each time an entity's properties change, a new **edition** is created. Editions are not updates in the traditional sense — the previous edition is never deleted or overwritten. Instead, the new edition carries a new temporal interval on both the decision time and transaction time axes.
+
+In the Rust crate, temporal intervals are represented as typed bounds:
+
+```rust
+// A temporal interval with inclusive start and open (exclusive or unbounded) end
+pub type LeftClosedTemporalInterval<A> =
+    Interval<Timestamp<A>, ClosedTemporalBound<A>, OpenTemporalBound<A>>;
+
+// Decision time and transaction time are distinct phantom types,
+// ensuring the two axes cannot be accidentally mixed
+pub enum DecisionTime { DecisionTime }
+pub enum TransactionTime { TransactionTime }
+```
+
+The type parameter `A` (either `DecisionTime` or `TransactionTime`) is used to tag timestamps and intervals, preventing any accidental mixing of the two axes at compile time.
+
+### Temporal bounds
+
+Each axis of an entity edition is represented by an interval with typed bounds:
+
+| Bound kind | Description |
+|------------|-------------|
+| `Inclusive(timestamp)` | The interval includes this exact timestamp |
+| `Exclusive(timestamp)` | The interval ends just before this timestamp |
+| `Unbounded` | The interval extends to infinity (no end) |
+
+An entity edition that is still "current" has an `Unbounded` upper bound on both axes. When a new edition supersedes it, the previous edition's upper bound is set to `Exclusive(now)`.
+
+---
+
+## Querying at a point in time
+
+The graph API allows you to scope any query to a specific point or interval in time on either axis. The temporal axes are configured per-query via `temporalAxes` parameters.
+
+### Query the current state
+
+To retrieve the current state of all entities (the default behavior), query with `"now"` on the decision time axis:
+
+```json
+{
+  "filter": { "equal": [{ "path": ["webId"] }, { "parameter": "my-web-id" }] },
+  "temporalAxes": {
+    "pinned": {
+      "axis": "transactionTime",
+      "timestamp": null
+    },
+    "variable": {
+      "axis": "decisionTime",
+      "interval": {
+        "start": null,
+        "end": null
+      }
+    }
+  }
+}
+```
+
+### Query as of a past transaction time
+
+To see what the graph contained at a previous point in database time — for example, to reproduce a past system state — pin the transaction time axis:
+
+```json
+{
+  "temporalAxes": {
+    "pinned": {
+      "axis": "transactionTime",
+      "timestamp": "2024-06-01T00:00:00Z"
+    },
+    "variable": {
+      "axis": "decisionTime",
+      "interval": {
+        "start": null,
+        "end": null
+      }
+    }
+  }
+}
+```
+
+### Retrieve a specific edition
+
+To retrieve the exact edition of an entity that was valid at a particular decision time:
+
+```json
+{
+  "temporalAxes": {
+    "pinned": {
+      "axis": "decisionTime",
+      "timestamp": "2024-03-15T12:00:00Z"
+    },
+    "variable": {
+      "axis": "transactionTime",
+      "interval": {
+        "start": null,
+        "end": null
+      }
+    }
+  }
+}
+```
+
+---
+
+## Why bi-temporal versioning matters
+
+<CardGroup cols={2}>
+  <Card title="Complete audit trail" icon="shield-check" href="/guides/entities">
+    Every change to every entity is recorded with both when it happened and when it was recorded. Nothing is ever deleted.
+  </Card>
+  <Card title="Historical analysis" icon="chart-line" href="/api/structural-queries">
+    Query the state of your knowledge graph at any point in the past, on either time axis, without maintaining separate snapshot infrastructure.
+  </Card>
+  <Card title="Retroactive corrections" icon="pencil" href="/guides/entities">
+    Record that something was true in the past by setting decision time to a past date, without disturbing the transaction time record.
+  </Card>
+  <Card title="No data loss" icon="database" href="/api/entities">
+    Superseded editions are retained in full. Rollback and forensic investigation are always possible.
+  </Card>
+</CardGroup>
+
+---
+
+## Types in the codebase
+
+The `hash-graph-temporal-versioning` crate exposes these primary types:
+
+| Type | Description |
+|------|-------------|
+| `DecisionTime` | Phantom type tag for the decision time axis |
+| `TransactionTime` | Phantom type tag for the transaction time axis |
+| `Timestamp<A>` | A point in time on axis `A` |
+| `TemporalBound<A>` | An interval bound (inclusive, exclusive, or unbounded) |
+| `TemporalInterval<A>` | A full interval on axis `A` |
+| `LeftClosedTemporalInterval<A>` | An interval with an inclusive start and open end (used for entity editions) |
+| `RightBoundedTemporalInterval<A>` | An interval with a bounded end (used for historical ranges) |
+
+<Note>
+The phantom type parameter `A` on `Timestamp<A>` and related types is a compile-time safety guarantee. The Rust type system prevents you from comparing a `Timestamp<DecisionTime>` with a `Timestamp<TransactionTime>`, eliminating an entire class of temporal logic bugs.
+</Note>
+
+---
+
+## Temporal versioning and types
+
+Temporal versioning applies not only to entities, but also to ontology types (entity types, property types, and data types). Every type record carries ontology metadata that includes temporal information about when it was created and when each edition was introduced.
+
+This means you can query the type system itself at a point in time — for example, to see what entity types existed before a particular date, or to audit which version of a type was in use when a given entity was created.

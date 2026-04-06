@@ -1,0 +1,192 @@
+---
+title: "Environment Variables"
+description: "Reference for environment variables that developers need to configure when running HASH locally or self-hosting."
+---
+
+HASH is configured through environment variables. The default values defined in `.env` and `.env.development` are sufficient to run the application in development mode — you do not need to set any variables unless you want to enable optional features such as AI, email, or cloud storage.
+
+## Configuration file precedence
+
+Variables are loaded in the following order (later files take precedence):
+
+1. `.env` — committed repository defaults
+2. `.env.development` — development-specific overrides (committed)
+3. `.env.local` — your local secrets and personal overrides (**not committed**)
+
+<Warning>
+  Never commit secrets to `.env` or `.env.development`. Put all secrets and values that must remain private in `.env.local`.
+</Warning>
+
+<Tip>
+  For a minimal AI-capable local setup, only the variables in `.env.local` below are required. Everything else has working defaults.
+
+  ```bash
+  OPENAI_API_KEY=your-openai-api-key
+  ANTHROPIC_API_KEY=your-anthropic-api-key
+  HASH_TEMPORAL_WORKER_AI_AWS_ACCESS_KEY_ID=your-aws-key-id
+  HASH_TEMPORAL_WORKER_AI_AWS_SECRET_ACCESS_KEY=your-aws-secret
+  ```
+</Tip>
+
+---
+
+<AccordionGroup>
+  <Accordion title="API server">
+    General configuration for the `hash-api` Node.js server.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `NODE_ENV` | `development` | Runtime environment. Controls default log levels and output formatting. Set to `production` for production deployments. |
+    | `PORT` | `5001` | Port the API server listens on. |
+    | `API_ORIGIN` | `http://localhost:5001` | The origin that the API service can be reached on. Used for generating absolute URLs. |
+    | `SESSION_SECRET` | `secret` | Secret used to sign session cookies. **Change this in production.** |
+    | `LOG_LEVEL` | `info` | Runtime log level: `debug`, `info`, `warn`, or `error`. |
+    | `FRONTEND_URL` | `http://localhost:3000` | URL of the frontend, used for generating links in emails and redirects. |
+    | `NOTIFICATION_POLL_INTERVAL` | `10000` | Interval in milliseconds at which the frontend polls for new notifications. Set to `0` to disable polling. |
+    | `BLOCK_PROTOCOL_API_KEY` | — | API key for fetching blocks from the [Block Protocol Hub](https://blockprotocol.org/hub). Generate one at `https://blockprotocol.org/settings/api-keys`. |
+  </Accordion>
+
+  <Accordion title="AI worker (hash-ai-worker-ts)">
+    Configuration for the TypeScript Temporal worker that runs AI-inference workflows.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `OPENAI_API_KEY` | — | OpenAI API key. Required for most AI features. |
+    | `ANTHROPIC_API_KEY` | — | Anthropic API key. Required for most AI features. |
+    | `HASH_TEMPORAL_WORKER_AI_AWS_ACCESS_KEY_ID` | — | AWS access key ID for the AI worker (used for Bedrock, S3, etc.). |
+    | `HASH_TEMPORAL_WORKER_AI_AWS_SECRET_ACCESS_KEY` | — | AWS secret access key for the AI worker. |
+    | `E2B_API_KEY` | — | E2B API key. Required only for the question-answering flow action. |
+    | `HASH_TEMPORAL_SERVER_HOST` | `localhost` | Hostname of the Temporal server. |
+    | `HASH_TEMPORAL_SERVER_PORT` | `7233` | Port of the Temporal server. |
+    | `HASH_GRAPH_HTTP_HOST` | `127.0.0.1` | Host address of the HASH Graph HTTP service. |
+    | `HASH_GRAPH_HTTP_PORT` | `4000` | Port of the HASH Graph HTTP service. |
+    | `HASH_GRAPH_RPC_HOST` | `127.0.0.1` | Host address of the HASH Graph RPC service. |
+    | `HASH_GRAPH_RPC_PORT` | `4002` | Port of the HASH Graph RPC service. |
+    | `INTERNAL_API_HOST` | — | Host for the internal API. Required for the `getWebSearchResultsActivity`. |
+    | `INTERNAL_API_KEY` | — | API key for authenticating with the internal API. |
+    | `GOOGLE_CLOUD_HASH_PROJECT_ID` | — | Google Cloud Platform project ID for document analysis (Vertex AI / Cloud Storage). |
+    | `GOOGLE_CLOUD_STORAGE_BUCKET` | — | GCS bucket name for document analysis. |
+    | `GOOGLE_APPLICATION_CREDENTIALS` | — | Path to a GCP credentials file. Set automatically by the `gcloud` CLI locally. |
+    | `DATADOG_API_KEY` | — | If set, worker logs are forwarded to Datadog. |
+  </Accordion>
+
+  <Accordion title="Vault (secrets management)">
+    The AI worker can read secrets from a HashiCorp Vault instance.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `HASH_VAULT_HOST` | — | Host address including protocol, e.g. `http://127.0.0.1`. |
+    | `HASH_VAULT_PORT` | `8200` | Port the Vault server is listening on. |
+    | `HASH_VAULT_ROOT_TOKEN` | — | Token to authenticate with Vault. If absent, login via AWS IAM is attempted instead. |
+    | `HASH_VAULT_MOUNT_PATH` | `secret` | Mount path for the KV secrets engine. |
+  </Accordion>
+
+  <Accordion title="PostgreSQL">
+    The graph and auxiliary services each maintain their own PostgreSQL database. All share the same PostgreSQL server.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `POSTGRES_PORT` | `5432` | Port the PostgreSQL server listens on. |
+    | `POSTGRES_USER` | `postgres` | Superuser username. |
+    | `POSTGRES_PASSWORD` | `postgres` | Superuser password. |
+    | `HASH_GRAPH_PG_USER` | `graph` | PostgreSQL user for the graph query layer. |
+    | `HASH_GRAPH_PG_PASSWORD` | `graph` | Password for the graph database user. |
+    | `HASH_GRAPH_PG_DATABASE` | `graph` | Name of the graph database. |
+    | `HASH_KRATOS_PG_USER` | `kratos` | PostgreSQL user for Kratos (identity). |
+    | `HASH_KRATOS_PG_PASSWORD` | `kratos` | Password for the Kratos database user. |
+    | `HASH_KRATOS_PG_DATABASE` | `kratos` | Name of the Kratos database. |
+    | `HASH_TEMPORAL_PG_USER` | `temporal` | PostgreSQL user for Temporal. |
+    | `HASH_TEMPORAL_PG_PASSWORD` | `temporal` | Password for the Temporal database user. |
+    | `HASH_TEMPORAL_PG_DATABASE` | `temporal` | Name of the Temporal main database. |
+    | `HASH_TEMPORAL_VISIBILITY_PG_DATABASE` | `temporal_visibility` | Name of the Temporal visibility database. |
+  </Accordion>
+
+  <Accordion title="Redis">
+    Redis is used for session storage and as the integration event queue.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `HASH_REDIS_HOST` | `localhost` | Hostname of the Redis server. |
+    | `HASH_REDIS_PORT` | `6379` | Port of the Redis server. |
+    | `HASH_INTEGRATION_QUEUE_NAME` | — | Name of the Redis queue to which entity update events are published. |
+    | `HASH_SEARCH_QUEUE_NAME` | `search` | Name of the Redis queue for the search loader service. |
+    | `HASH_SEARCH_LOADER_PORT` | `3838` | Port for the search loader service. |
+  </Accordion>
+
+  <Accordion title="Temporal">
+    Temporal provides durable workflow execution for AI and integration workers.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `HASH_TEMPORAL_SERVER_HOST` | `localhost` | Hostname of the Temporal server. |
+    | `HASH_TEMPORAL_SERVER_PORT` | `7233` | Port of the Temporal server. |
+  </Accordion>
+
+  <Accordion title="Email">
+    HASH supports three email transport mechanisms. In development the `dummy` transporter logs emails to a local file instead of sending them.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `HASH_EMAIL_TRANSPORTER` | `dummy` | Email transport to use: `dummy`, `aws`, or `smtp`. |
+    | `DUMMY_EMAIL_TRANSPORTER_FILE_PATH` | `var/api/dummy-email-transporter/email-dumps.yml` | Path to the file where dummy emails are written in development. |
+    | `SYSTEM_EMAIL_SENDER_NAME` | — | Display name for outgoing emails. Required when transport is `aws` or `smtp`. |
+    | `SYSTEM_EMAIL_ADDRESS` | — | From address for outgoing emails. Required when transport is `aws` or `smtp`. |
+    | `SMTP_SERVER_HOST` | — | Hostname of the SMTP server. Required when transport is `smtp`. |
+    | `SMTP_SERVER_PORT` | — | Port of the SMTP server. Required when transport is `smtp`. |
+    | `SMTP_SERVER_USERNAME` | — | SMTP authentication username. Optional if the server auto-authenticates. |
+    | `SMTP_SERVER_PASSWORD` | — | SMTP authentication password. Optional if the server auto-authenticates. |
+
+    To use the AWS SES transporter, set `HASH_EMAIL_TRANSPORTER=aws` and configure the AWS variables below.
+  </Accordion>
+
+  <Accordion title="AWS (S3 uploads and SES email)">
+    Used for file uploads (S3) and transactional email (SES). Local file uploads are used by default; S3 is recommended for production.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `AWS_REGION` | — | AWS region, e.g. `us-east-1`. |
+    | `AWS_ACCESS_KEY_ID` | — | AWS access key ID for general API operations. |
+    | `AWS_SECRET_ACCESS_KEY` | — | AWS secret access key for general API operations. |
+    | `FILE_UPLOAD_PROVIDER` | `LOCAL_FILE_SYSTEM` | Upload provider: `LOCAL_FILE_SYSTEM` or `AWS_S3`. |
+    | `LOCAL_FILE_UPLOAD_PATH` | `var/uploads` | Relative path to store files when using the local provider. |
+    | `AWS_S3_UPLOADS_BUCKET` | — | S3 bucket name for file uploads. Required when `FILE_UPLOAD_PROVIDER=AWS_S3`. |
+    | `AWS_S3_UPLOADS_ACCESS_KEY_ID` | — | AWS access key ID specifically for S3 uploads. Optional if an IAM role grants access. |
+    | `AWS_S3_UPLOADS_SECRET_ACCESS_KEY` | — | AWS secret access key specifically for S3 uploads. |
+    | `AWS_S3_UPLOADS_ENDPOINT` | — | Custom S3-compatible endpoint URL. Useful for MinIO or other providers. |
+    | `AWS_S3_UPLOADS_FORCE_PATH_STYLE` | — | Set to `true` if your S3 setup requires path-style requests instead of virtual-hosted style. |
+
+    <Note>
+      For in-browser document previewing, configure an `Access-Control-Allow-Origin` header on your S3 bucket that is not a wildcard (`*`).
+    </Note>
+  </Accordion>
+
+  <Accordion title="Observability (StatsD and Snowplow)">
+    Optional integrations for metrics and product analytics telemetry.
+
+    **StatsD metrics**
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `STATSD_ENABLED` | — | Set to `1` to enable StatsD metric reporting. |
+    | `STATSD_HOST` | — | Hostname of the StatsD server. |
+    | `STATSD_PORT` | `8125` | Port of the StatsD server. |
+
+    **Snowplow analytics**
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `HASH_TELEMETRY_ENABLED` | `false` | Whether to enable Snowplow telemetry. |
+    | `HASH_TELEMETRY_HTTPS` | `false` | Set to `true` to connect to Snowplow over HTTPS. |
+    | `HASH_TELEMETRY_DESTINATION` | — | Hostname of the Snowplow tracker endpoint. Required when telemetry is enabled. |
+    | `HASH_TELEMETRY_APP_ID` | `hash-workspace-app` | Application ID used to differentiate event sources in Snowplow. |
+  </Accordion>
+
+  <Accordion title="Graph service (Rust)">
+    Low-level configuration for the `hash-graph` Rust service.
+
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `HASH_GRAPH_LOG_LEVEL` | — | Rust log filter for the graph service. Example: `trace,h2=info,tokio_util=debug,tower=info`. |
+    | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OpenTelemetry Collector OTLP endpoint. Automatically configured in development. |
+  </Accordion>
+</AccordionGroup>

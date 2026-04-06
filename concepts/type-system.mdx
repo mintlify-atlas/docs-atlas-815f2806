@@ -1,0 +1,261 @@
+---
+title: "The Type System"
+description: "How HASH's strongly-typed ontology works: the Block Protocol type system, versioned URLs, EntityType, PropertyType, DataType, inheritance, and system types."
+---
+
+HASH's knowledge graph is built on a **strongly-typed ontology**. Every entity, every property value, and every link must conform to a declared type. The type system is derived from the [Block Protocol Type System](https://github.com/blockprotocol/blockprotocol/blob/main/rfcs/text/0352-graph-type-system.md) and is implemented in both Rust (server-side) and TypeScript (client-side and WASM).
+
+This page covers the type system in depth: how types are structured, how they relate to each other, how they are identified, and the distinction between system types and user-defined types.
+
+---
+
+## Overview
+
+The type system is divided into two planes:
+
+<Tabs>
+  <Tab title="Ontology (type definitions)">
+    The ontology defines schemas and validation rules:
+
+    1. **DataType** — validation rules for primitive values (strings, numbers, booleans, etc.)
+    2. **PropertyType** — reusable property schemas that reference data types or other property types
+    3. **EntityType** — complete entity schemas with required properties, links, and inheritance
+  </Tab>
+  <Tab title="Knowledge (data instances)">
+    Knowledge components are concrete data that conforms to the ontology:
+
+    1. **Values** — primitive data values that conform to data types
+    2. **Properties** — structured data (objects and arrays) that conform to property types
+    3. **Entities** — records with properties that conform to entity types
+  </Tab>
+</Tabs>
+
+The relationship between ontology and knowledge is analogous to schemas and records in a database: the ontology defines structure and rules; knowledge contains the actual data.
+
+---
+
+## Data types
+
+A `DataType` defines validation rules for raw primitive values. It is the leaf node of the type hierarchy — every value stored in the graph ultimately resolves to a data type.
+
+Data types are JSON Schema-compatible objects. The built-in system data types cover the most common primitives:
+
+```
+https://blockprotocol.org/@blockprotocol/types/data-type/text/v/1
+https://blockprotocol.org/@blockprotocol/types/data-type/number/v/1
+https://blockprotocol.org/@blockprotocol/types/data-type/boolean/v/1
+https://blockprotocol.org/@blockprotocol/types/data-type/object/v/1
+https://blockprotocol.org/@blockprotocol/types/data-type/null/v/1
+```
+
+Data types can also reference other data types via `constrainsValuesOn` to further restrict the allowed value space — for example, a `PositiveInteger` data type that extends `Number` with a minimum-value constraint.
+
+---
+
+## Property types
+
+A `PropertyType` gives semantic meaning to a raw value. It references one or more data types (or other property types) and carries a human-readable title.
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/property-type",
+  "kind": "propertyType",
+  "$id": "https://hash.ai/@alice/types/property-type/name/v/1",
+  "title": "Name",
+  "description": "The full name of a person or organization",
+  "oneOf": [
+    {
+      "$ref": "https://blockprotocol.org/@blockprotocol/types/data-type/text/v/1"
+    }
+  ]
+}
+```
+
+Property types are reusable. The same `Name` property type can be referenced by `Person`, `Organization`, and `Product` entity types, ensuring consistent semantics across the graph. The graph tracks references between property types and data types via the `constrainsPropertiesOn` and `constrainsValuesOn` edge kinds.
+
+---
+
+## Entity types
+
+An `EntityType` is the most expressive layer of the ontology. It defines:
+
+- A unique identifier (`$id`) as a versioned URL
+- A title, optional plural title, and description
+- Required and optional properties (via references to property types)
+- Links to other entity types (defining allowed outgoing relationships)
+- Inheritance from other entity types (via `allOf`)
+- Optional display metadata (`labelProperty`, `icon`)
+
+### Minimal example
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type",
+  "kind": "entityType",
+  "type": "object",
+  "$id": "https://hash.ai/@alice/types/entity-type/person/v/1",
+  "title": "Person",
+  "titlePlural": "People",
+  "description": "A human being",
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/name/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/name/v/1"
+    },
+    "https://hash.ai/@alice/types/property-type/email/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/email/v/1"
+    }
+  },
+  "required": ["https://hash.ai/@alice/types/property-type/name/"],
+  "links": {
+    "https://hash.ai/@alice/types/entity-type/friend-of/v/1": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "https://hash.ai/@alice/types/entity-type/person/v/1" }
+        ]
+      }
+    }
+  }
+}
+```
+
+---
+
+## Type inheritance via `allOf`
+
+Entity types support inheritance through the `allOf` field. A child entity type inherits all properties and links defined by its parent types and may add new ones.
+
+```json
+{
+  "$id": "https://hash.ai/@alice/types/entity-type/employee/v/1",
+  "title": "Employee",
+  "allOf": [
+    { "$ref": "https://hash.ai/@alice/types/entity-type/person/v/1" }
+  ],
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/employee-id/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/employee-id/v/1"
+    }
+  },
+  "required": ["https://hash.ai/@alice/types/property-type/employee-id/"]
+}
+```
+
+An `Employee` entity inherits all the properties and links of `Person` — including the requirement for a `Name` — and adds a required `Employee ID`.
+
+The graph represents inheritance relationships as `inheritsFrom` edges between entity types. When you resolve an entity type to its "closed" form, all inherited properties and link constraints are merged in.
+
+<Note>
+Multiple inheritance is supported. An entity type may list more than one type in its `allOf` array. Properties and links from all parent types are merged during resolution.
+</Note>
+
+---
+
+## Versioned URLs
+
+Every type in HASH is uniquely identified by a **versioned URL** — a structured string combining a base URL with a version number.
+
+### Format
+
+```
+{baseUrl}v/{version}
+```
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| `baseUrl` | Stable URL ending with `/`, identifies the type across all versions | `https://hash.ai/@alice/types/entity-type/person/` |
+| `v/` | Literal separator | `v/` |
+| `version` | Positive integer; increments with each published revision | `1` |
+
+Full example:
+
+```
+https://hash.ai/@alice/types/entity-type/person/v/1
+```
+
+### URL conventions by type kind
+
+```
+# Data types
+https://hash.ai/@{user}/types/data-type/{name}/v/{n}
+
+# Property types
+https://hash.ai/@{user}/types/property-type/{name}/v/{n}
+
+# Entity types
+https://hash.ai/@{user}/types/entity-type/{name}/v/{n}
+```
+
+### Versioning semantics
+
+Publishing a new version of a type **does not modify or invalidate the previous version**. Both URLs remain permanently accessible. Entities that reference version 1 continue to validate against version 1, even after version 2 is published.
+
+This guarantees stability: once a type URL is committed to, the schema at that URL never changes.
+
+### Draft versions
+
+Types in development may carry a pre-release identifier:
+
+```
+https://hash.ai/@alice/types/entity-type/person/v/2-draft.my-lane.3
+```
+
+The pre-release segment uses the format `draft.{lane}.{revision}`, where:
+- `lane` is an alphanumeric identifier (e.g., a username or UUID) that isolates parallel drafts
+- `revision` is a monotonically increasing integer within that lane
+
+A draft version always has lower precedence than the published version with the same major number: `v/2-draft.lane.5 < v/2`.
+
+---
+
+## Graph edges between types
+
+The graph uses typed edges to represent references between ontology elements:
+
+| Edge kind | Meaning |
+|-----------|---------|
+| `inheritsFrom` | An entity type extends another entity type |
+| `constrainsValuesOn` | A property type or data type references a data type |
+| `constrainsPropertiesOn` | An entity type or property type references a property type |
+| `constrainsLinksOn` | An entity type declares an allowed link type |
+| `constrainsLinkDestinationsOn` | An entity type constrains what the link targets may be |
+
+These edges are traversed when resolving a type to its closed form and when building structural query results.
+
+---
+
+## System types vs. user-defined types
+
+<Tabs>
+  <Tab title="System types">
+    System types are defined by HASH or the Block Protocol and are available to all users. They provide the foundational primitives on which user-defined types are built.
+
+    Examples:
+    - `https://blockprotocol.org/@blockprotocol/types/data-type/text/v/1`
+    - `https://blockprotocol.org/@blockprotocol/types/entity-type/link/v/1`
+    - `https://hash.ai/@hash/types/entity-type/user/v/1`
+
+    System types are read-only. They cannot be modified or deleted.
+  </Tab>
+  <Tab title="User-defined types">
+    Any user or organization with a web (namespace) in HASH can define their own data types, property types, and entity types. User-defined types are scoped to the user's namespace in their URL:
+
+    ```
+    https://hash.ai/@alice/types/entity-type/invoice/v/1
+    ```
+
+    User-defined types can reference both system types and other user-defined types, enabling a shared, composable ontology across webs.
+  </Tab>
+</Tabs>
+
+---
+
+## The ontology as a shared schema
+
+The collection of all types in HASH — system types, user-defined types, and types fetched from external sources — forms the **ontology**: a shared, versioned schema for the entire knowledge graph.
+
+Because types are identified by URLs and are immutable once published, they can be safely shared and referenced across organizational boundaries. An entity type defined by one team can inherit from an entity type defined by another, and both remain independently versionable.
+
+<Tip>
+HASH fetches external types on demand via the `type-fetcher` service. This allows the graph to reference types hosted on other HASH instances or Block Protocol-compatible registries without embedding them locally.
+</Tip>

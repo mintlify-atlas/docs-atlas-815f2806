@@ -1,0 +1,179 @@
+---
+title: "Block Protocol"
+description: "How HASH implements the Block Protocol open standard for composable data blocks and strongly-typed entities."
+---
+
+The [Block Protocol](https://blockprotocol.org) is an open standard for building composable, data-driven UI blocks. HASH is a full Block Protocol implementation: it hosts blocks, implements the type system specification in both Rust and TypeScript, and uses Block Protocol type URLs as the global namespace for all entity and property schemas.
+
+## What is the Block Protocol?
+
+The Block Protocol defines two complementary systems:
+
+1. **A type system** — a structured hierarchy of data types, property types, and entity types that give data a globally unique, versioned identity.
+2. **A block embedding API** — a contract between embedding applications (like HASH) and blocks that describes how blocks receive and write data.
+
+HASH uses the Block Protocol type system as its native schema layer. Every entity in HASH is an instance of a Block Protocol entity type identified by a versioned URL.
+
+## Type System Hierarchy
+
+The Block Protocol type system is organised into three levels:
+
+<CardGroup cols={3}>
+  <Card title="Data Types" icon="brackets-curly" href="https://blockprotocol.org/docs/types/data-type">
+    Define validation rules for primitive values: strings, numbers, booleans, and complex types like arrays and objects. Analogous to scalar types in a database schema.
+  </Card>
+  <Card title="Property Types" icon="list" href="https://blockprotocol.org/docs/types/property-type">
+    Define reusable property schemas that reference data types. Property types can also compose other property types. Analogous to column definitions that carry semantic meaning.
+  </Card>
+  <Card title="Entity Types" icon="diagram-project" href="https://blockprotocol.org/docs/types/entity-type">
+    Define complete entity structures: which property types are required, which links to other entities are permitted, and which entity types this type inherits from.
+  </Card>
+</CardGroup>
+
+The relationship mirrors databases: ontology types (data/property/entity types) define structure and rules; knowledge components (values, properties, entities) are concrete data instances that conform to those types.
+
+## Type URLs
+
+Every Block Protocol type has a **versioned URL** as its globally unique identifier. Type URLs follow this pattern:
+
+```
+https://{domain}/@{namespace}/types/{kind}/{slug}/v/{version}
+```
+
+For example:
+
+```
+https://blockprotocol.org/@blockprotocol/types/entity-type/link/v/1
+https://blockprotocol.org/@alice/types/entity-type/person/v/3
+https://hash.ai/@hash/types/property-type/name/v/1
+```
+
+Type URLs are treated as stable identifiers: the domain, namespace, slug, and version together uniquely address a specific schema definition. HASH stores and resolves these URLs in its graph, enabling cross-instance interoperability.
+
+## Ontology and Knowledge Components
+
+The Block Protocol distinguishes between two layers:
+
+| Layer | Components | Description |
+|-------|-----------|-------------|
+| **Ontology** | Data types, property types, entity types | Schemas and validation rules |
+| **Knowledge** | Values, properties, entities | Concrete data instances conforming to ontology types |
+
+This separation is analogous to schemas vs. records in a relational database. Ontology types define the structure; knowledge components are the actual data.
+
+## The `@blockprotocol/type-system` Crate
+
+HASH implements the Block Protocol type system in Rust at `libs/@blockprotocol/type-system/rust`. The crate provides:
+
+- Parsing and validation of data types, property types, and entity types
+- A `Validator` trait and `Valid<T>` wrapper guaranteeing validated values at the type level
+- PostgreSQL integration for database storage of type records
+- **WebAssembly** compilation support for in-browser validation in the frontend
+- Comprehensive metadata and provenance tracking (who created a type, when, from where)
+
+A corresponding TypeScript package at `libs/@blockprotocol/type-system/typescript` exposes the same types to the Node.js API and frontend, generated from the Rust implementation.
+
+### Core type structure
+
+The Rust crate organises its modules as follows:
+
+```
+type_system::ontology
+  ├── data_type       — validation rules for primitive values
+  ├── property_type   — reusable property schemas
+  └── entity_type     — complete entity structures and link definitions
+
+type_system::knowledge
+  ├── PropertyValue   — primitive values conforming to data types
+  ├── Property        — structured data conforming to property types
+  └── Entity          — complete entities conforming to entity types
+
+type_system::principal
+  ├── Actor           — individual entities that can perform actions
+  ├── ActorGroup      — collections of actors
+  └── Role            — access control designations
+
+type_system::provenance  — origin and history tracking for types
+```
+
+### Generating Rust documentation
+
+```bash
+cargo doc --all-features --open
+```
+
+## Type Inheritance and Link Entities
+
+Entity types can inherit from other entity types, forming an inheritance chain resolved at query time. The base link entity type is defined at:
+
+```
+https://blockprotocol.org/@blockprotocol/types/entity-type/link/v/1
+```
+
+Any entity type that inherits from this URL is treated as a **link entity** — a typed edge between two other entities. Querying for all link entities uses this inheritance chain:
+
+```json
+{
+  "filter": {
+    "equal": [
+      { "path": ["type", "inheritsFrom", "*", "baseUrl"] },
+      { "parameter": "https://blockprotocol.org/@blockprotocol/types/entity-type/link/" }
+    ]
+  }
+}
+```
+
+## Type Fetcher Service
+
+HASH does not fetch types from `blockprotocol.org` directly in the graph hot path. Instead, a dedicated **type-fetcher** service acts as an intermediary:
+
+- The type fetcher communicates with the graph via **tarpc** (Rust RPC).
+- It downloads, caches, and validates remote type definitions before passing them to the graph store.
+- In offline development mode (`yarn external-services:offline up`), the type fetcher skips remote calls and uses only locally available types.
+
+The type fetcher binary is started with:
+
+```bash
+cargo run --bin hash-graph -- type-fetcher
+```
+
+## Fetching Types from the Block Protocol Hub
+
+Type definitions published to [blockprotocol.org](https://blockprotocol.org) can be loaded into a HASH instance via the entity type API:
+
+```bash
+POST /entity-types/load
+X-Authenticated-User-Actor-Id: <actor-uuid>
+Content-Type: application/json
+
+{
+  "entityTypeId": "https://blockprotocol.org/@blockprotocol/types/entity-type/link/v/1"
+}
+```
+
+HASH uses a `BLOCK_PROTOCOL_API_KEY` environment variable when fetching blocks from the [Block Protocol Hub](https://blockprotocol.org/hub). Generate a key at `https://blockprotocol.org/settings/api-keys`.
+
+## Blocks in HASH
+
+Block Protocol blocks are self-contained UI components that can read and write entity data. HASH ships a set of first-party blocks in the `/blocks` directory of the monorepo, and can also load blocks published to the Block Protocol Hub.
+
+Each block in `/blocks` is a self-contained package implementing the Block Protocol embedding API. Blocks receive typed entity data from HASH and can propose mutations back to the embedding application.
+
+<Note>
+  For more information on the Block Protocol specification and how to build your own blocks, visit [blockprotocol.org/docs](https://blockprotocol.org/docs).
+</Note>
+
+## Provenance and Metadata
+
+Every type record in HASH carries structured **provenance** — information about where it came from, who created it, and when:
+
+| Metadata field | Description |
+|---------------|-------------|
+| Record ID | Globally unique identifier (the versioned URL) |
+| Temporal versioning | When the type was created or last modified (transaction time and decision time) |
+| Ownership | Whether the type is locally owned or fetched from a remote source |
+| Actor | Who created or archived the type |
+| Source | Where the type originated (local creation, remote import, AI generation) |
+| Origin | How the type came into existence |
+
+This provenance is stored alongside the type schema in the graph's PostgreSQL store and is available via structural queries on the ontology.

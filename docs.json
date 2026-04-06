@@ -1,122 +1,93 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "HASH",
+  "theme": "luma",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#046dfc",
+    "light": "#0c1414",
+    "dark": "#046dfc"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/e9b20d1e-bc03-4e7b-88fd-804a82bd6ed2.png",
+  "logo": {
+    "light": "https://media.brand.dev/76f8547b-6ed9-4389-9652-22ef9f80c43e.svg",
+    "dark": "https://media.brand.dev/76f8547b-6ed9-4389-9652-22ef9f80c43e.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/hashintel/hash"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/hashintel/hash"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "self-hosting"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/entities-and-types",
+              "concepts/type-system",
+              "concepts/temporal-versioning",
+              "concepts/ai-agents"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Using HASH",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/entities",
+              "guides/types",
+              "guides/flows-and-goals",
+              "guides/browser-plugin",
+              "guides/integrations"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Developer Guide",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "developers/architecture",
+              "developers/graph-api",
+              "developers/hashql",
+              "developers/block-protocol",
+              "developers/environment-variables"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Graph API",
             "pages": [
-              "api-reference/introduction"
+              "api/overview",
+              "api/entities",
+              "api/types",
+              "api/structural-queries"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "HashQL",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/hashql-overview",
+              "api/hashql-jexpr"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

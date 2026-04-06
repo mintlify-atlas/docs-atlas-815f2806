@@ -1,0 +1,162 @@
+---
+title: "Graph API Overview"
+description: "The HASH Graph REST API provides a high-performance interface for creating, querying, and managing entities, types, and their relationships in the HASH knowledge graph."
+---
+
+The HASH Graph is a high-performance entity-graph query layer. It exposes a REST API for creating, querying, and managing entities, types, and their relationships. The service is fully instrumented with OpenTelemetry for comprehensive observability.
+
+## Base URL
+
+The Graph service listens on port **4000** by default, configured via the `HASH_GRAPH_HTTP_PORT` environment variable.
+
+```
+http://localhost:4000
+```
+
+## Authentication
+
+Every request must include the `X-Authenticated-User-Actor-Id` header containing the UUID of the actor performing the operation. The authorization layer uses this actor ID to enforce permission-based access control on every resource.
+
+```bash
+curl -H "X-Authenticated-User-Actor-Id: <actor-uuid>" \
+  http://localhost:4000/entities/query
+```
+
+<Note>
+  Requests that omit the `X-Authenticated-User-Actor-Id` header are rejected with `400 Bad Request`.
+</Note>
+
+## Resource groups
+
+<CardGroup cols={2}>
+  <Card title="Entities" href="/api/entities">
+    Create, update, archive, and query entity instances — the nodes in the knowledge graph. Includes support for link entities that connect two other entities.
+  </Card>
+  <Card title="Entity Types" href="/api/types#entity-types">
+    Define and manage the schemas that entities conform to. Entity types specify which properties and link kinds an entity may have.
+  </Card>
+  <Card title="Property Types" href="/api/types#property-types">
+    Define reusable property schemas referenced by entity types. Each property type specifies the set of data type values it accepts.
+  </Card>
+  <Card title="Data Types" href="/api/types#data-types">
+    Primitive type definitions (strings, numbers, booleans, etc.) that sit at the leaf level of the type hierarchy and constrain raw values.
+  </Card>
+</CardGroup>
+
+## Structural queries
+
+Query endpoints accept a **structural query** body composed of:
+
+- A `filter` object that selects which root vertices are included in the result.
+- A `graphResolveDepths` object that controls how many edges away from the root the subgraph is expanded.
+
+All query endpoints that return graph data use this format. See [Structural Queries](/api/structural-queries) for the full specification.
+
+## Response format
+
+Successful responses return the requested resource as JSON. All non-OK HTTP responses include a body conforming to the `Status` format defined in the `@local/status` library:
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "Entity type URL was not found",
+  "details": []
+}
+```
+
+The `Status` schema is available at `/api-doc/models/status.json`.
+
+## OpenAPI specification
+
+The Graph API ships with a machine-readable OpenAPI 3.0.3 specification generated from Rust source code using [`utoipa`](https://github.com/juhaku/utoipa).
+
+**Serve the spec at runtime:**
+
+```
+GET /api-doc/openapi.json
+```
+
+**Regenerate from source:**
+
+```bash
+# From apps/hash-graph
+cargo run --bin openapi-spec-generator
+```
+
+The generated file is written to `libs/@local/graph/api/openapi/openapi.json`. Referenced sub-schemas (entity type, property type, data type structures) are served as static JSON files under `/api-doc/models/`.
+
+## Health check
+
+```
+GET /health
+```
+
+Returns `200 OK` with the body `Healthy` when the server is running. No authentication header is required.
+
+## Observability
+
+The Graph service integrates with OpenTelemetry for distributed tracing, structured logging, and metrics.
+
+| Signal | Details |
+|--------|---------|
+| **Traces** | All HTTP requests and database queries are automatically instrumented with spans. Context is propagated to the Type Fetcher service via tarpc. |
+| **Logs** | Structured output with correlation IDs linking logs to traces. Configure granularity with `HASH_GRAPH_LOG_LEVEL`. |
+| **Metrics** | Sent to the OpenTelemetry Collector endpoint configured via `OTEL_EXPORTER_OTLP_ENDPOINT`. |
+
+```bash
+# Example log level configuration
+HASH_GRAPH_LOG_LEVEL=trace,h2=info,tokio_util=debug,tower=info
+
+# OTLP endpoint (set automatically in the integrated dev environment)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+Telemetry data can be viewed in Grafana at `http://localhost:3001` when running the full development environment.
+
+## Running locally
+
+### Integrated development environment (recommended)
+
+```bash
+# From the repository root — starts Graph with all dependencies
+yarn start:graph
+```
+
+### Standalone
+
+1. Start external services (PostgreSQL, etc.):
+
+   ```bash
+   yarn external-services up --wait
+   ```
+
+2. Apply database migrations:
+
+   ```bash
+   cargo run --bin hash-graph -- migrate
+   ```
+
+3. Start the Graph server:
+
+   ```bash
+   cargo run --bin hash-graph -- server
+   ```
+
+4. Optionally start the Type Fetcher (required for loading external types):
+
+   ```bash
+   cargo run --bin hash-graph -- type-fetcher
+   ```
+
+<Tip>
+  The Type Fetcher acts as an intermediary between the Graph and the web, fetching and validating external type definitions so the Graph does not need direct outbound network access.
+</Tip>
+
+## Query limits
+
+| Setting | Environment variable | Default |
+|---------|---------------------|---------|
+| Max entities per query | `HASH_GRAPH_QUERY_ENTITY_LIMIT` | 1000 |
+| Max ontology types per query | `HASH_GRAPH_QUERY_ONTOLOGY_LIMIT` | 1000 |
+
+Requests that specify a `limit` larger than the configured maximum are rejected.

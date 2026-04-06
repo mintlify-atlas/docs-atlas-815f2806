@@ -1,0 +1,189 @@
+---
+title: "AI Agents"
+description: "How AI agents operate within HASH to enrich the knowledge graph: Temporal workflows, flow types, activities, LLM providers, and how flows relate to entities and goals."
+---
+
+HASH is designed to be a **self-building knowledge graph**. AI agents continuously enrich entities, extract structured data from unstructured sources, verify claims, and execute multi-step research tasks — all writing their results back into the graph as typed entities. This page explains how AI agents are architected in HASH and what capabilities they provide.
+
+---
+
+## Overview
+
+AI work in HASH is coordinated through the **HASH AI Worker** — a [Temporal](https://temporal.io/) worker written in TypeScript that executes durable, fault-tolerant workflows. Workflows are broken into discrete **activities** — individual units of work that the Temporal engine schedules, retries, and monitors independently.
+
+The AI worker connects to:
+- The **HASH Graph** (to read and write entities and types)
+- **OpenAI** and **Anthropic** (for LLM inference)
+- The **internal API** (for web search and other platform services)
+- **Google Cloud Platform** (for document analysis via Vertex AI and Cloud Storage)
+
+```
+User / Goal / Schedule
+        │
+        ▼
+  Temporal Workflow (run-flow-workflow)
+        │
+        ├─── generateFlowRunName
+        ├─── researchEntitiesAction
+        ├─── inferEntitiesFromContentAction
+        ├─── persistEntitiesAction
+        └─── ... (other actions)
+               │
+               ▼
+         HASH Graph (typed entities)
+```
+
+---
+
+## Flows
+
+A **flow** is a structured, multi-step AI task. Flows are the top-level unit of AI work in HASH. They are defined as `FlowDefinition` objects that specify a trigger, a sequence of actions, and the expected outputs.
+
+Flows run inside Temporal workflows, which means they are:
+- **Durable**: a flow that is interrupted mid-execution will resume from where it left off
+- **Observable**: every step is visible in the Temporal UI and logged for debugging
+- **Retryable**: individual activities can be retried with configurable attempt limits
+
+### How flows are triggered
+
+<Steps>
+  <Step title="Manually">
+    A user initiates a flow from the HASH interface, providing a research goal or a set of entity types to populate.
+  </Step>
+  <Step title="On schedule">
+    A flow can be configured to run on a recurring schedule, keeping entities up to date automatically.
+  </Step>
+  <Step title="Via goals">
+    Goals are persistent objectives in the knowledge graph. When a goal is active, HASH automatically triggers the appropriate flows to satisfy it, then monitors the results and re-triggers as needed.
+  </Step>
+</Steps>
+
+---
+
+## Types of AI activities
+
+<CardGroup cols={2}>
+  <Card title="Research" icon="magnifying-glass" href="/guides/flows-and-goals">
+    The `researchEntitiesAction` orchestrates a multi-step research task. A coordinating agent decomposes the goal into sub-tasks, executes web searches, reads pages, and synthesizes findings into proposed entities. Supports cancellation with checkpoint-based resumption.
+  </Card>
+  <Card title="Entity extraction" icon="wand-magic-sparkles" href="/guides/flows-and-goals">
+    The `inferEntitiesFromContentAction` takes raw content (text, HTML, or document data) and uses an LLM to extract structured entities conforming to specified entity types in the graph.
+  </Card>
+  <Card title="Web browsing" icon="globe" href="/guides/browser-plugin">
+    `getWebPageByUrlAction` and `getWebPageSummaryAction` fetch and process web pages. The agent can follow links, extract structured data, and summarize content for downstream activities.
+  </Card>
+  <Card title="Web search" icon="search" href="/guides/flows-and-goals">
+    `webSearchAction` and `generateWebQueriesAction` formulate and execute web search queries, returning results for further processing by extraction or research activities.
+  </Card>
+  <Card title="Persistence" icon="floppy-disk" href="/api/entities">
+    `persistEntityAction` and `persistEntitiesAction` write proposed entities and their properties to the HASH Graph, creating or updating entity editions with full temporal metadata and provenance.
+  </Card>
+  <Card title="Document analysis" icon="file-lines" href="/guides/flows-and-goals">
+    `inferMetadataFromDocumentAction` processes uploaded files and documents using Google Cloud Vertex AI, extracting structured metadata conforming to user-defined entity types.
+  </Card>
+</CardGroup>
+
+---
+
+## The research flow in depth
+
+The `researchEntitiesAction` is the most complex AI activity. It uses a **coordinating agent** pattern to tackle open-ended research goals:
+
+<Steps>
+  <Step title="Plan">
+    The coordinating agent receives the research goal and the target entity types. It formulates a plan: what to search for, what pages to read, and how to validate its findings.
+  </Step>
+  <Step title="Delegate">
+    Sub-tasks are delegated to specialized worker agents that handle web search, page retrieval, and claim extraction. Each worker operates independently and reports back to the coordinator.
+  </Step>
+  <Step title="Synthesize">
+    The coordinator aggregates claims from all workers, resolves conflicts, and assembles proposed entities with their properties and links.
+  </Step>
+  <Step title="Check">
+    Before finalizing, the coordinator performs a fact-checking step — verifying claims against sources and flagging low-confidence assertions.
+  </Step>
+  <Step title="Persist">
+    Confirmed entities are written to the graph via `persistEntitiesAction`. Each entity edition is tagged with provenance metadata indicating which LLM, which sources, and which flow produced it.
+  </Step>
+</Steps>
+
+<Note>
+The research action supports cancellation at any point. If cancelled, it saves a checkpoint to the graph so that a subsequent run can resume from the last known good state rather than restarting from scratch.
+</Note>
+
+---
+
+## LLM providers
+
+The AI worker supports two LLM providers, configured via environment variables:
+
+| Provider | Environment variable | Usage |
+|----------|---------------------|-------|
+| OpenAI | `OPENAI_API_KEY` | GPT models for research, extraction, and summarization |
+| Anthropic | `ANTHROPIC_API_KEY` | Claude models for research, extraction, and summarization |
+
+Both providers are available to all flow activities. The specific model used by a given activity is configurable at the flow definition level.
+
+<Warning>
+At least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` must be set for AI flows to run. Flows that attempt to use a provider without a configured key will fail immediately.
+</Warning>
+
+---
+
+## Activities reference
+
+The following activities are registered with the Temporal worker:
+
+| Activity | Description |
+|----------|-------------|
+| `generateWebQueriesAction` | Generates optimized search queries from a research goal |
+| `webSearchAction` | Executes web searches via the internal API |
+| `getWebPageByUrlAction` | Fetches and processes a web page by URL |
+| `processAutomaticBrowsingSettingsAction` | Applies user-configured browsing rules |
+| `getWebPageSummaryAction` | Summarizes a web page's content using an LLM |
+| `inferEntitiesFromContentAction` | Extracts typed entities from text or HTML |
+| `inferMetadataFromDocumentAction` | Extracts metadata from documents via Vertex AI |
+| `persistEntityAction` | Writes a single entity to the graph |
+| `persistEntitiesAction` | Writes multiple entities to the graph in batch |
+| `getFileFromUrlAction` | Downloads a file from a URL for document analysis |
+| `researchEntitiesAction` | Runs the full multi-step research flow |
+| `answerQuestionAction` | Answers a specific question using the LLM and graph context |
+| `writeGoogleSheetAction` | Exports entity data to a Google Sheet |
+| `generateFlowRunName` | Generates a human-readable name for a flow run |
+
+---
+
+## Provenance and the graph
+
+Every entity created or updated by an AI agent carries **provenance metadata** — a record of where the data came from and how it was produced. This includes:
+
+- The flow definition and flow run that produced the entity
+- The LLM model and provider used for inference
+- The source URLs or documents that informed the extraction
+- The edition provenance (who or what created this edition, and when)
+
+Provenance is stored as typed metadata on each entity edition, making it queryable through the standard graph API. You can filter entities by their origin — for example, retrieving only entities extracted from a particular domain, or only entities produced by a specific model.
+
+### Goals, flows, and entities
+
+```
+Goal (entity in graph)
+  │
+  │  triggers
+  ▼
+Flow run (Temporal workflow)
+  │
+  │  produces / updates
+  ▼
+Entities (typed nodes in graph)
+  │
+  │  evidence of
+  ▼
+Claims (link entities connecting entities to sources)
+```
+
+Goals are themselves entities in the graph, typed with the `Goal` entity type. When a goal is active, the system creates flow runs to satisfy it. The results of those runs — new or updated entities — are linked back to the goal via claim entities, forming a traceable chain from objective to evidence to knowledge.
+
+<Tip>
+Because everything in HASH — including goals, flow runs, and provenance records — is represented as typed entities in the graph, you can query and analyze AI activity using the same structural query API you use for any other data.
+</Tip>

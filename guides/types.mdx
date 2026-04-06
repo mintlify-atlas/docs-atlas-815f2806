@@ -1,0 +1,189 @@
+---
+title: "Creating and Managing Types"
+description: "Create and manage entity types, property types, link types, and data types in HASH to define the schema of your knowledge graph."
+---
+
+Types are the schemas that give structure to your HASH knowledge graph. Every entity must conform to at least one entity type, which in turn is composed of property types, each constrained by one or more data types. This page explains how to browse existing types, create your own, and extend types through inheritance.
+
+## The types page
+
+Navigate to **Types** in the left sidebar to open the types browser at `/types`. The page displays all types accessible to your active workspace, organized across four tabs:
+
+| Tab | Contents |
+|-----|----------|
+| **All** | Every type: entity types, link types, property types, and data types. |
+| **Entity types** | Non-link entity types — schemas for real-world things. |
+| **Link types** | Entity types that inherit from the base `Link` type — used to connect entities. |
+| **Property types** | Reusable named property definitions. |
+| **Data types** | Primitive value constraints (`Text`, `Number`, `Boolean`, etc.). |
+
+Each tab shows the count of types it contains. Click any type row to open its definition page.
+
+### Creating a type
+
+The **Create type** button in the top-right of the types page opens the type creation flow. You can also reach it directly at `/new/types/entity-type`.
+
+## Creating an entity type
+
+<Steps>
+  <Step title="Open the create entity type form">
+    Click **Create type** on the types page, or navigate to `/new/types/entity-type`. To create a link type instead, append `?extends=<linkEntityTypeId>` to the URL.
+  </Step>
+  <Step title="Enter a title">
+    Type a singular name for your entity type, for example `Person`. HASH automatically suggests a plural form (`People`) using AI — you can accept or override it.
+
+    For link types, HASH also suggests an **inverse label** (the relationship read from the target entity's perspective, for example `"works at"` becomes `"employs"` in reverse).
+  </Step>
+  <Step title="Add a description">
+    Write a brief description of what the entity type represents. This appears in type pickers and helps collaborators understand the schema.
+  </Step>
+  <Step title="Submit the form">
+    Click **Create** to create the type. You are redirected to the type's editor page where you can add properties and links.
+  </Step>
+  <Step title="Add properties">
+    In the type editor's **Definition** tab, click **Add property** to attach property types. For each property you can:
+
+    - Search for an existing property type by name.
+    - Create a new property type inline.
+    - Mark the property as **Required** to enforce it on every entity of this type.
+    - Set an **array** constraint to allow multiple values.
+  </Step>
+  <Step title="Add link types">
+    Click **Add link** to define outgoing link relationships. Specify:
+
+    - The **link type** (an entity type that inherits from `Link`).
+    - The **destination entity type(s)** the link may point to.
+    - Optional min/max cardinality constraints.
+  </Step>
+  <Step title="Publish">
+    Click **Save** to publish the type. It is assigned a versioned URL of the form `https://hash.ai/@{shortname}/types/entity-type/{slug}/v/1`.
+  </Step>
+</Steps>
+
+### Example: a "Person" entity type
+
+The following JSON illustrates what a `Person` entity type with `Name` and `Email` properties looks like under the hood:
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type",
+  "kind": "entityType",
+  "type": "object",
+  "$id": "https://hash.ai/@alice/types/entity-type/person/v/1",
+  "title": "Person",
+  "titlePlural": "People",
+  "description": "A human being",
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/name/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/name/v/1"
+    },
+    "https://hash.ai/@alice/types/property-type/email/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/email/v/1"
+    }
+  },
+  "required": [
+    "https://hash.ai/@alice/types/property-type/name/"
+  ]
+}
+```
+
+You do not need to write JSON directly — HASH generates this schema as you interact with the type editor. The raw schema is visible via the API if you need to inspect or migrate it.
+
+## Creating a property type
+
+Property types are reusable definitions that give semantic meaning to raw values. The same `Name` property type can be used by `Person`, `Organization`, `Product`, and any other entity type — ensuring consistent semantics across your graph.
+
+<Steps>
+  <Step title="Open the property type creator">
+    In the type editor for an entity type, click **Add property** and then select **Create new property type** from the search dropdown.
+
+    You can also create property types independently via the Graph API.
+  </Step>
+  <Step title="Enter a title">
+    Give the property a singular, descriptive name, for example `Email Address` or `Date of Birth`.
+  </Step>
+  <Step title="Choose expected data types">
+    Select one or more data types that valid values must conform to:
+
+    | Data type | Use for |
+    |-----------|---------|
+    | `Text` | Strings — names, descriptions, URLs |
+    | `Number` | Integers and floats |
+    | `Boolean` | True/false flags |
+    | `Object` | Arbitrary JSON objects |
+    | `Null` | Explicit absence of a value |
+
+    To allow multiple data types (a union), add more than one. For example, `Priority` might accept either `Text` ("High") or `Number` (1).
+  </Step>
+  <Step title="Save">
+    Click **Create** to publish the property type. It receives a versioned URL and is immediately available to use in other entity types.
+  </Step>
+</Steps>
+
+## Type inheritance
+
+Entity types can inherit from one or more parent types. An inheriting type automatically includes all properties and links defined by its parents and may add its own.
+
+To extend an existing type:
+
+1. On the type creation form, pass the parent type's versioned URL in the `extends` query parameter: `/new/types/entity-type?extends=<versionedUrl>`.
+2. Alternatively, use the type editor to add `allOf` references.
+
+The schema for an `Employee` that inherits from `Person` looks like this:
+
+```json
+{
+  "$id": "https://hash.ai/@alice/types/entity-type/employee/v/1",
+  "title": "Employee",
+  "allOf": [
+    { "$ref": "https://hash.ai/@alice/types/entity-type/person/v/1" }
+  ],
+  "properties": {
+    "https://hash.ai/@alice/types/property-type/employee-id/": {
+      "$ref": "https://hash.ai/@alice/types/property-type/employee-id/v/1"
+    }
+  }
+}
+```
+
+An `Employee` entity automatically validates against all `Person` properties (including `Name` and `Email`) as well as its own `Employee ID` property.
+
+<Tip>
+  Multi-type entities are also supported. When you assign more than one entity type to an entity, HASH merges the property and link constraints from all types. This allows a single entity to satisfy multiple schemas simultaneously.
+</Tip>
+
+## Publishing types to the web
+
+Every type you create is published at a stable **versioned URL** on the `hash.ai` domain:
+
+```
+https://hash.ai/@{shortname}/types/entity-type/{slug}/v/{version}
+```
+
+These URLs are publicly resolvable — anyone can dereference them to retrieve the full JSON schema. This makes HASH types interoperable: other systems that understand the Block Protocol type system can consume your types directly.
+
+### Versioning
+
+Updating a type creates a new immutable version (`v/2`, `v/3`, etc.) at a new URL. The previous version remains valid and continues to work for any entities that reference it.
+
+When you save a new version of an entity type, HASH offers to upgrade existing entities of that type to reference the new version automatically.
+
+## System types vs. custom types
+
+HASH ships with a set of **system types** defined by the HASH team and the Block Protocol. These cover common concepts like `User`, `Organization`, `Page`, `Document`, `Canvas`, `File`, and `Claim`. System types are available in every workspace and form the basis of HASH's built-in features.
+
+**Custom types** are types you or your organization create. They live under your namespace (`@{shortname}`) and can reference system types, Block Protocol types, or other custom types.
+
+<Note>
+  System types cannot be modified directly. To extend a system type, create a new entity type that inherits from it using the `allOf` mechanism.
+</Note>
+
+## Editing and archiving types
+
+Open any type's page to edit its definition, add or remove properties, and publish a new version. The type editor provides:
+
+- **Definition tab** — Properties and links, editable in place.
+- **Entities tab** — All instances of the type in your workspace.
+- **Uploads tab** — For file types: a dedicated upload interface.
+
+To archive a type, open its context menu (three-dot menu in the top-right) and select **Archive type**. Archived types are hidden from type pickers and creation flows. Existing entities that reference an archived type continue to function.

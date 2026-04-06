@@ -1,80 +1,133 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Get HASH up and running in minutes — choose between the hosted cloud service or a local development environment."
 ---
 
-## Get started in three steps
+HASH offers two ways to get started. The cloud option is the fastest path to a working environment. The self-hosted option gives you full control over your data and infrastructure.
 
-Get your documentation site running locally and make your first customization.
+<Tabs>
+  <Tab title="Cloud (recommended)">
+    The quickest way to use HASH is through the hosted service at [app.hash.ai](https://app.hash.ai). No installation required.
 
-### Step 1: Set up your local environment
+    <Steps>
+      <Step title="Create an account">
+        Go to [app.hash.ai/signup](https://app.hash.ai/signup) and create a free account using your email address.
+      </Step>
+      <Step title="Sign in">
+        After registering, [sign in](https://app.hash.ai/signin) to access your HASH workspace.
+      </Step>
+      <Step title="Skip the waitlist (if applicable)">
+        When you first create an account, you may be placed on a waitlist. To move to the front of the queue, follow the instructions shown in your HASH dashboard after signing in. All submissions are reviewed by a member of the HASH team.
+      </Step>
+      <Step title="Create your first entity">
+        Once inside your workspace:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+        1. Click **Entities** in the left sidebar.
+        2. Click **New entity**.
+        3. Select or create an entity type (for example, `Person` or `Company`).
+        4. Fill in the properties for your entity and click **Save**.
 
-### Step 2: Deploy your changes
+        Your entity is now stored in your knowledge graph and can be queried, linked, and enriched by AI agents.
+      </Step>
+      <Step title="Explore flows and agents">
+        Navigate to **Flows** in the sidebar to run an AI-powered research workflow. Flows can automatically gather and structure information from the web into your knowledge graph.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Self-Hosted">
+    You can run HASH locally for development or evaluation. This requires installing several dependencies and running Docker containers.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Warning>
+      Running HASH locally is not yet officially supported. These are experimental instructions. For a reliable experience, use the [hosted cloud service](https://app.hash.ai).
+    </Warning>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    <Steps>
+      <Step title="Install prerequisites">
+        Make sure the following tools are installed and meet the minimum versions:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+        - **Git** ≥ 2.17
+        - **Rust** (via `rustup`) — version matched to `rust-toolchain.toml`
+        - **Docker** ≥ 20.10
+        - **Docker Compose** ≥ 2.17.2
+        - **Docker Buildx** ≥ 0.10.4
+        - **Protobuf** compiler
 
-### Step 3: Go live
+        On macOS, if `git --version` fails you may need to install Xcode Command Line Tools first:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+        ```bash
+        xcode-select --install
+        ```
 
-## Next steps
+        If you use Docker Desktop on macOS or Windows, go to **Preferences → Resources** and allocate at least 4 GB of RAM (8 GB recommended).
+      </Step>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/hashintel/hash.git
+        cd hash
+        ```
+      </Step>
+      <Step title="Install development tools with mise">
+        HASH uses [mise-en-place](https://mise.jdx.dev/) to manage consistent tool versions across the codebase:
 
-Now that you have your docs running, explore these key features:
+        ```bash
+        mise install
+        ```
 
-<CardGroup cols={2}>
+        After installing mise, make sure it is [activated in your shell](https://mise.jdx.dev/getting-started.html#activate-mise).
+      </Step>
+      <Step title="Install Node.js dependencies">
+        ```bash
+        yarn install
+        ```
+      </Step>
+      <Step title="Configure environment variables">
+        Create a `.env.local` file in the repository root. Dummy values are sufficient if you are not using AI features:
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+        ```bash
+        OPENAI_API_KEY=your-openai-api-key
+        ANTHROPIC_API_KEY=your-anthropic-api-key
+        HASH_TEMPORAL_WORKER_AI_AWS_ACCESS_KEY_ID=your-aws-access-key-id
+        HASH_TEMPORAL_WORKER_AI_AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+        E2B_API_KEY=your-e2b-api-key
+        ```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+        <Tip>
+          `.env.local` is not committed to the repository. Put all secrets here. Default values come from `.env` and `.env.development` — override them in `.env.local` without editing those files.
+        </Tip>
+      </Step>
+      <Step title="Start external services">
+        Launch Postgres, the Graph query layer, Kratos, and Redis as Docker containers:
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+        ```bash
+        yarn external-services up -d
+        ```
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+        To force a rebuild of the containers (required when the graph query layer has changed):
 
-</CardGroup>
+        ```bash
+        yarn external-services up -d --build
+        ```
+      </Step>
+      <Step title="Start the application">
+        ```bash
+        yarn start
+        ```
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+        This starts both the backend and frontend in a single terminal. Once you see `http://localhost:3000`, the frontend is ready. The API is online once you see `localhost:5001`. Both must be running for the frontend to work.
+      </Step>
+      <Step title="Sign in with a dev account">
+        Three users are seeded automatically for development. All have the password `password`:
+
+        | Email | Role |
+        |-------|------|
+        | `alice@example.com` | Regular user |
+        | `bob@example.com` | Regular user |
+        | `admin@example.com` | Admin |
+
+        Open [http://localhost:3000](http://localhost:3000) and sign in with one of these accounts.
+      </Step>
+    </Steps>
+
+    For full setup details, troubleshooting, and database reset instructions, see the [Self-Hosting HASH](/self-hosting) page.
+  </Tab>
+</Tabs>

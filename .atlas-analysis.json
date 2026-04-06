@@ -1,0 +1,100 @@
+{
+  "projectType": "saas",
+  "projectName": "HASH",
+  "projectDescription": "An open-source, multi-tenant platform for self-building knowledge graphs powered by AI agents, a strongly-typed entity system, and a functional graph query language.",
+  "theme": "luma",
+  "primaryColor": "#046dfc",
+  "lightColor": "#0c1414",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "self-hosting"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/entities-and-types",
+              "concepts/type-system",
+              "concepts/temporal-versioning",
+              "concepts/ai-agents"
+            ]
+          },
+          {
+            "group": "Using HASH",
+            "pages": [
+              "guides/entities",
+              "guides/types",
+              "guides/flows-and-goals",
+              "guides/browser-plugin",
+              "guides/integrations"
+            ]
+          },
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "developers/architecture",
+              "developers/graph-api",
+              "developers/hashql",
+              "developers/block-protocol",
+              "developers/environment-variables"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Graph API",
+            "pages": [
+              "api/overview",
+              "api/entities",
+              "api/types",
+              "api/structural-queries"
+            ]
+          },
+          {
+            "group": "HashQL",
+            "pages": [
+              "api/hashql-overview",
+              "api/hashql-jexpr"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Self-building knowledge graph that integrates data from public internet and private sources via AI agents",
+    "Strongly-typed entity and type system based on the Block Protocol type system",
+    "Bi-temporal graph versioning with decision time and transaction time axes",
+    "HashQL — typed, functional traversal language for querying the graph",
+    "AI-powered workflows and flows using Temporal for durable execution",
+    "Browser plugin for capturing structured data from any web page",
+    "REST Graph API with OpenAPI specification and structural queries",
+    "MCP (Model Context Protocol) servers for Linear, Notion, and GitHub integrations",
+    "Multi-tenant architecture with fine-grained authorization",
+    "Visual type editor and entity browser for non-technical users"
+  ],
+  "publicApiSurface": [
+    "GET/POST /entities — CRUD for graph entities",
+    "GET/POST /entity-types — Entity type management",
+    "GET/POST /property-types — Property type management",
+    "GET/POST /data-types — Data type management",
+    "POST /entities/query — Structural entity queries with graphResolveDepths",
+    "POST /entity-types/query — Structural type queries",
+    "GraphQL API via Apollo Server (hash-api)",
+    "HashQL J-Expr query language",
+    "Temporal workflows: runFlowWorkflow",
+    "hash-graph CLI: server, migrate, type-fetcher subcommands"
+  ]
+}

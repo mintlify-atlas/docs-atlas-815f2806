@@ -1,0 +1,490 @@
+---
+title: "Types API"
+description: "Manage the ontology — entity types, property types, and data types — that define the schema of the HASH knowledge graph."
+---
+
+HASH uses a three-level type hierarchy to define the structure of all data in the graph:
+
+- **Data types** — primitive value definitions (strings, numbers, dates, etc.)
+- **Property types** — named properties that reference one or more data types or nested property types
+- **Entity types** — schemas that entities conform to, referencing property types and link entity types
+
+All type URLs follow the **versioned URL** format:
+
+```
+{baseUrl}v/{versionNumber}
+```
+
+For example: `https://example.com/types/property-types/name/v/1`
+
+The `baseUrl` identifies the type across versions (e.g. `https://example.com/types/property-types/name/`), while the full versioned URL refers to a specific immutable version.
+
+<Note>
+  Types defined in HASH are immutable once published. To change a type, create a new version by incrementing the version number in the URL. The `PUT` (update) endpoints create new versions, not in-place modifications.
+</Note>
+
+---
+
+## Entity Types
+
+Entity types define the structure of entities. An entity type specifies which properties an entity may or must have, and which link entity types are permitted. Entity types can inherit from other entity types via `allOf`.
+
+### Schema structure
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type",
+  "kind": "entityType",
+  "$id": "https://example.com/types/entity-types/person/v/1",
+  "type": "object",
+  "title": "Person",
+  "description": "A human person.",
+  "allOf": [],
+  "properties": {
+    "https://example.com/types/property-types/name/": {
+      "$ref": "https://example.com/types/property-types/name/v/1"
+    },
+    "https://example.com/types/property-types/age/": {
+      "$ref": "https://example.com/types/property-types/age/v/1"
+    }
+  },
+  "required": [
+    "https://example.com/types/property-types/name/"
+  ],
+  "links": {
+    "https://example.com/types/entity-types/employed-by/v/1": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "https://example.com/types/entity-types/organization/v/1" }
+        ]
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `$schema` | string | Must be `https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type` |
+| `kind` | string | Must be `"entityType"` |
+| `$id` | string | The versioned URL of this type |
+| `type` | string | Must be `"object"` |
+| `title` | string | Human-readable name |
+| `description` | string | Human-readable description |
+| `allOf` | array | Entity type references this type inherits from |
+| `properties` | object | Map of property type base URLs to their constraints |
+| `required` | array | Property type base URLs that must be present |
+| `links` | object | Map of link entity type versioned URLs to allowed destination entity types |
+
+### Create an entity type
+
+```
+POST /entity-types
+```
+
+<ParamField header="X-Authenticated-User-Actor-Id" type="string (UUID)" required>
+  The actor UUID used to authorize the request.
+</ParamField>
+
+<ParamField body="schema" type="object | object[]" required>
+  The entity type schema (or an array of schemas to create multiple at once).
+</ParamField>
+
+<ParamField body="provenance" type="object" required>
+  Provenance for this edition of the type.
+</ParamField>
+
+**Example request**
+
+```json
+{
+  "schema": {
+    "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type",
+    "kind": "entityType",
+    "$id": "https://example.com/types/entity-types/person/v/1",
+    "type": "object",
+    "title": "Person",
+    "description": "A human person.",
+    "properties": {
+      "https://example.com/types/property-types/name/": {
+        "$ref": "https://example.com/types/property-types/name/v/1"
+      }
+    },
+    "required": [
+      "https://example.com/types/property-types/name/"
+    ]
+  },
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | Metadata of the created entity type (`MaybeListOfEntityTypeMetadata`) |
+| `400` | Request body is invalid (`Status`) |
+| `409` | An entity type with this base URL already exists (`Status`) |
+| `500` | Store error (`Status`) |
+
+### Update an entity type
+
+```
+PUT /entity-types
+```
+
+Creates a new version of an existing entity type. The `$id` in the schema must have an incremented version number.
+
+**Example request**
+
+```json
+{
+  "schema": {
+    "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/entity-type",
+    "kind": "entityType",
+    "$id": "https://example.com/types/entity-types/person/v/2",
+    "type": "object",
+    "title": "Person",
+    "description": "A human person with an optional biography.",
+    "properties": {
+      "https://example.com/types/property-types/name/": {
+        "$ref": "https://example.com/types/property-types/name/v/1"
+      },
+      "https://example.com/types/property-types/biography/": {
+        "$ref": "https://example.com/types/property-types/biography/v/1"
+      }
+    },
+    "required": [
+      "https://example.com/types/property-types/name/"
+    ]
+  },
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | Metadata of the updated entity type (`EntityTypeMetadata`) |
+| `404` | Base entity type ID was not found |
+| `422` | Request body is invalid |
+| `500` | Store error |
+
+### Query entity types
+
+```
+POST /entity-types/query
+```
+
+Returns a flat list of entity types matching a [structural query](/api/structural-queries).
+
+**Example: get a specific entity type by base URL and version**
+
+```json
+{
+  "filter": {
+    "all": [
+      {
+        "equal": [
+          { "path": ["baseUrl"] },
+          { "parameter": "https://example.com/types/entity-types/person/" }
+        ]
+      },
+      {
+        "equal": [
+          { "path": ["version"] },
+          { "parameter": 1 }
+        ]
+      }
+    ]
+  },
+  "graphResolveDepths": {
+    "inheritsFrom": { "outgoing": 0 },
+    "constrainsValuesOn": { "outgoing": 0 },
+    "constrainsPropertiesOn": { "outgoing": 0 },
+    "constrainsLinksOn": { "outgoing": 0 },
+    "constrainsLinkDestinationsOn": { "outgoing": 0 },
+    "isOfType": { "outgoing": 0 },
+    "hasLeftEntity": { "incoming": 0, "outgoing": 0 },
+    "hasRightEntity": { "incoming": 0, "outgoing": 0 }
+  }
+}
+```
+
+### Query entity type subgraph
+
+```
+POST /entity-types/query/subgraph
+```
+
+Returns a subgraph rooted at entity types that match the filter. Use `graphResolveDepths` to include referenced property types and data types in the same response.
+
+### Archive / unarchive an entity type
+
+```
+PUT /entity-types/archive
+PUT /entity-types/unarchive
+```
+
+Archives or unarchives a specific versioned entity type URL. Archived types are hidden from regular queries.
+
+**Archive request body**
+
+```json
+{
+  "typeUrl": "https://example.com/types/entity-types/person/v/1"
+}
+```
+
+### Load an external entity type
+
+```
+POST /entity-types/load
+```
+
+Fetches and stores an entity type from an external URL via the Type Fetcher service. Use this to cache public Block Protocol types for local validation.
+
+---
+
+## Property Types
+
+Property types define named, reusable properties. Each property type specifies the set of values it accepts using a `oneOf` array of data type references, nested property type objects, or arrays.
+
+### Schema structure
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/property-type",
+  "kind": "propertyType",
+  "$id": "https://example.com/types/property-types/name/v/1",
+  "title": "Name",
+  "description": "A textual name.",
+  "oneOf": [
+    {
+      "$ref": "https://blockprotocol.org/@blockprotocol/types/data-type/text/v/1"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `$schema` | string | Must be `https://blockprotocol.org/types/modules/graph/0.3/schema/property-type` |
+| `kind` | string | Must be `"propertyType"` |
+| `$id` | string | The versioned URL of this type |
+| `title` | string | Human-readable name |
+| `description` | string | Human-readable description |
+| `oneOf` | array | One or more value definitions — data type refs, nested property type objects, or arrays |
+
+The `oneOf` array supports three kinds of entries:
+
+- **Data type reference**: `{ "$ref": "<versioned-data-type-url>" }` — accepts a scalar value of that data type.
+- **Property type object**: `{ "type": "object", "properties": { ... } }` — accepts a nested object whose properties are further constrained.
+- **Array**: `{ "type": "array", "items": { "oneOf": [...] } }` — accepts an array of values matching the nested `oneOf`.
+
+### Create a property type
+
+```
+POST /property-types
+```
+
+<ParamField body="schema" type="object | object[]" required>
+  The property type schema (or an array to create multiple at once).
+</ParamField>
+
+<ParamField body="provenance" type="object" required>
+  Provenance for this edition.
+</ParamField>
+
+**Example request**
+
+```json
+{
+  "schema": {
+    "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/property-type",
+    "kind": "propertyType",
+    "$id": "https://example.com/types/property-types/name/v/1",
+    "title": "Name",
+    "description": "A textual name.",
+    "oneOf": [
+      {
+        "$ref": "https://blockprotocol.org/@blockprotocol/types/data-type/text/v/1"
+      }
+    ]
+  },
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | Metadata of the created property type |
+| `409` | A property type with this base URL already exists |
+| `422` | Request body is invalid |
+| `500` | Store error |
+
+### Update a property type
+
+```
+PUT /property-types
+```
+
+Creates a new version of an existing property type.
+
+### Query property types
+
+```
+POST /property-types/query
+```
+
+Returns property types matching a structural query. Supports the same filter and depth options as entity type queries.
+
+### Archive / unarchive a property type
+
+```
+PUT /property-types/archive
+PUT /property-types/unarchive
+```
+
+---
+
+## Data Types
+
+Data types sit at the bottom of the type hierarchy. They define primitive value schemas based on JSON Schema primitives and optional format constraints. Data types can inherit from other data types via `allOf`.
+
+### Schema structure
+
+```json
+{
+  "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/data-type",
+  "kind": "dataType",
+  "$id": "https://example.com/types/data-types/country-code/v/1",
+  "title": "Country Code",
+  "titlePlural": "Country Codes",
+  "description": "An ISO 3166-1 alpha-2 country code.",
+  "type": "string",
+  "minLength": 2,
+  "maxLength": 2
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `$schema` | string | Must be `https://blockprotocol.org/types/modules/graph/0.3/schema/data-type` |
+| `kind` | string | Must be `"dataType"` |
+| `$id` | string | The versioned URL of this type |
+| `title` | string | Human-readable name |
+| `titlePlural` | string | Plural form of the title |
+| `description` | string | Human-readable description |
+| `type` | string \| string[] | JSON Schema primitive type(s): `"string"`, `"number"`, `"integer"`, `"boolean"`, `"null"`, `"object"`, `"array"` |
+
+Additional JSON Schema validation keywords (e.g. `minLength`, `maxLength`, `minimum`, `maximum`, `format`, `enum`) can be included and are used during entity validation.
+
+### Create a data type
+
+```
+POST /data-types
+```
+
+<ParamField body="schema" type="object | object[]" required>
+  The data type schema (or an array to create multiple at once).
+</ParamField>
+
+<ParamField body="provenance" type="object" required>
+  Provenance for this edition.
+</ParamField>
+
+**Example request**
+
+```json
+{
+  "schema": {
+    "$schema": "https://blockprotocol.org/types/modules/graph/0.3/schema/data-type",
+    "kind": "dataType",
+    "$id": "https://example.com/types/data-types/email-address/v/1",
+    "title": "Email Address",
+    "description": "An RFC 5322 email address.",
+    "type": "string",
+    "format": "email"
+  },
+  "provenance": {
+    "actorType": "human",
+    "origin": { "type": "web-app" }
+  }
+}
+```
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200` | Metadata of the created data type |
+| `409` | A data type with this base URL already exists |
+| `422` | Request body is invalid |
+| `500` | Store error |
+
+### Update a data type
+
+```
+PUT /data-types
+```
+
+Creates a new version of an existing data type.
+
+### Query data types
+
+```
+POST /data-types/query
+```
+
+Returns data types matching a structural query.
+
+### Query data type subgraph
+
+```
+POST /data-types/query/subgraph
+```
+
+Returns a subgraph rooted at data types that match the filter.
+
+### Archive / unarchive a data type
+
+```
+PUT /data-types/archive
+PUT /data-types/unarchive
+```
+
+---
+
+## Versioned URL format
+
+All types are identified by **versioned URLs** of the form:
+
+```
+{scheme}://{host}/{path}/v/{versionNumber}
+```
+
+The base URL (everything before `/v/`) is stable across versions and uniquely identifies the type's identity. The version number is a positive integer incremented for each new published version.
+
+```
+Base URL:     https://example.com/types/entity-types/person/
+Version 1:    https://example.com/types/entity-types/person/v/1
+Version 2:    https://example.com/types/entity-types/person/v/2
+```
+
+<Warning>
+  Type schemas are **immutable** once stored. The update endpoints create new versions; they do not modify the existing version in place. References in existing entities and types continue to point to the specific version they were created with.
+</Warning>

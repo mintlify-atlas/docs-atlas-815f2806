@@ -1,0 +1,152 @@
+---
+title: "HashQL overview"
+description: "HashQL is a typed, functional traversal language for querying and transforming bi-temporal knowledge graphs."
+---
+
+HashQL (HASH Query Language) pairs a small, regular functional core with a principled type discipline and a modular compiler pipeline. The surface syntax is intentionally **syntax-agnostic**: multiple frontends can target a single, authoritative AST with a single semantics. Today's frontend is **J-Expr** (JSON expressions); further frontends can be added without disturbing downstream phases.
+
+## Key characteristics
+
+- **Functional traversal core.** Queries are compositions of pure operators over graph effects.
+- **Sound, expressive types.** Structural types are enabled by default (with a nominal opt-in), along with bounded generics, unions/intersections, μ-types, and HM-style inference with subtyping.
+- **Syntax independence.** Today's frontend is J-Expr; further frontends can be added without disturbing downstream phases.
+- **First-class diagnostics.** Every phase emits structured diagnostics; fatal issues stop at diagnostic boundaries while non-fatal ones accumulate.
+- **Heterogeneous execution.** The compiler targets multiple execution backends (e.g., PostgreSQL and an interpreter), enabling cost-aware placement and parallelism.
+- **Bi-temporal graphs.** Queries operate over a bitemporal slice parameterised by **decision time** and **transaction time**. One axis is pinned (a single instant), the other variable (a half-open interval).
+
+## Compiler pipeline
+
+HashQL's compiler is organized into four phases. Only the frontend **pushes** into its successor; all other phases **pull** from their single predecessor. Each phase is side-effect-free and delimited by diagnostic boundaries.
+
+<Steps>
+  <Step title="Frontend (J-Expr)">
+    A streaming lexer and compact parser that reads JSON-with-comments and produces the AST directly — no intermediate JSON DOM is materialized. Additional frontends can target the same AST without affecting any downstream phase.
+  </Step>
+  <Step title="Abstract Syntax Tree (AST)">
+    Expands special forms, canonicalizes and erases surface type syntax, resolves imports and names, and assigns stable IDs via small, testable passes. The AST pipeline runs eight ordered passes:
+
+    `PreExpansionNameResolver` → `SpecialFormExpander` → `Sanitizer` → `ImportResolver` → `NameMangler` → `TypeDefinitionExtractor` → `NodeRenumberer` → `TypeExtractor`
+
+    Frontend and AST phases prioritize **recovery** to maximize signal for later passes.
+  </Step>
+  <Step title="Higher-level Intermediate Representation (HIR)">
+    A reified, interned tree for type inference, type checking, and specialization. Retains an explicit tree to model control flow and typing constraints. The HIR pipeline runs six ordered passes:
+
+    `Reification` → `AliasReplacement` → `ConvertTypeConstructor` → `TypeInference` → `TypeChecking` → `Specialization`
+  </Step>
+  <Step title="Evaluation">
+    Currently lowers to a transient graph IR executed by the runtime against **PostgreSQL**. Richer lowered IRs and an **interpreter VM** are planned to remove evaluator-imposed limits. A planned **MIR** (middle-level IR) with basic blocks will unlock data-flow and control-flow optimisations and parallel scheduling.
+  </Step>
+</Steps>
+
+<Note>
+  Fatal diagnostics stop compilation at diagnostic boundaries; non-fatal diagnostics are propagated to the next phase. Each phase consumes diagnostics from its predecessor and may emit diagnostics of varying severity.
+</Note>
+
+## Packages
+
+HashQL ships with four packages. User-defined modules are not yet supported but are planned.
+
+<CardGroup cols={2}>
+  <Card title="kernel" icon="microchip">
+    Type primitives and special forms that are compiler-intrinsic. Contains the foundational building blocks that all other packages depend on.
+  </Card>
+  <Card title="core" icon="cube">
+    Foundational types, constructors, and intrinsics: arithmetic, comparison, options, results, and more. The standard library for HashQL programs.
+  </Card>
+  <Card title="graph" icon="diagram-project">
+    Graph-specific effect types and intrinsics arranged as **head → body → tail**: entry points, traversal combinators, and terminal operators.
+  </Card>
+  <Card title="main" icon="play">
+    The implicit user entry point. Every HashQL query executes within this module's scope.
+  </Card>
+</CardGroup>
+
+## Type system
+
+<AccordionGroup>
+  <Accordion title="Core model">
+    HashQL's type system is designed to be compatible with graph schemas and expressive enough for a modern functional language.
+
+    - **Structural by default**, with **nominal opt-in** via `newtype` (opaque identity).
+    - **Complete lattice** with `⊤` ("Unknown") and `⊥` ("Never"); supports unions (`T | U`) and intersections (`T & U`).
+    - **Bounded parametric polymorphism** with generic constraints.
+    - **Equi-recursive μ-types** for cyclic structures.
+    - **Variance:** types are covariant by default; closure parameters are contravariant; explicit variance on type constructors is supported.
+    - **Kinds** separate types (`*`) from higher-order type constructors (`* → *`, etc.).
+  </Accordion>
+
+  <Accordion title="Composite types">
+    | Type | Description |
+    | ---- | ----------- |
+    | **Struct (closed)** | Invariant field set — no additional fields permitted |
+    | **Struct (open)** | Width-subtyping allowed; fields are covariant |
+    | **Tuple** | Fixed-length, heterogeneous; length is invariant |
+    | **`Dict<K, V>`** | Homogeneous key/value map; keys invariant, values covariant |
+    | **`List<V>`** | Homogeneous ordered sequence; covariant in element type |
+
+    Composite types are constructed with `#`-prefixed data constructors in J-Expr syntax (see [J-Expr Syntax Reference](/api/hashql-jexpr)).
+  </Accordion>
+
+  <Accordion title="Subtyping and algebra">
+    - Unions and intersections are **distributive**.
+    - Joins (`⊔`, least upper bound) and meets (`⊓`, greatest lower bound) exist for all types, falling back to union (`|`) or intersection (`&`) if no tighter bound exists.
+    - Explicit **ascription** (`as`) admits only **upcasts** (`T <: U`). Downcasts would require runtime checks and are not permitted.
+  </Accordion>
+
+  <Accordion title="Generics and kinds">
+    - Generics can be **bounded** (e.g., `T: Number | String`) and appear in both type aliases and closures.
+    - Higher-kinded forms are expressible at the type level (e.g., `List<∙>` has kind `* → *`).
+    - Type variables annotated with bounds must satisfy those bounds at every call site.
+  </Accordion>
+
+  <Accordion title="Type inference and checking">
+    Constraint-based inference (HM-style with subtyping) operates over the HIR: emit constraints, solve, then apply a substitution bottom-up.
+
+    HashQL differentiates two kinds of unknowns:
+
+    - **Inference holes** (`_`) — must be constrained by the surrounding context.
+    - **Inference variables** (`T`) — may remain unconstrained if they are latent in generics.
+
+    Bidirectional checks around annotations (`as`, parameter/return types) improve local precision and error pointing.
+  </Accordion>
+
+  <Accordion title="Option and Result via newtype encoding">
+    Algebraic data types are encoded as **unions of nominal wrappers** over structural carriers. No runtime tags are needed in many cases because wrapper identity serves as the discriminant.
+
+    ```text
+    Option<T>  ≜  Some<T> | None
+    Some<T>    ≜  newtype T
+    None       ≜  newtype Unit   (Unit is the empty tuple ())
+    ```
+
+    ```text
+    Result<T, E>  ≜  Ok<T> | Err<E>
+    Ok<T>         ≜  newtype T
+    Err<E>        ≜  newtype E
+    ```
+
+    Constructors (`Some`, `None`, `Ok`, `Err`) are distinct nominal types. Pattern-like selection is expressed via `if`, `index`, structural access, and nominal checks in typing.
+  </Accordion>
+</AccordionGroup>
+
+## Graph execution model
+
+HashQL's runtime separates graph traversal into three stages:
+
+| Stage | Role |
+| ----- | ---- |
+| **Head** | Query entry points — pick starting vertices or edges, choose the temporal axis and range |
+| **Body** | Compositional traversal operators — map, filter, expand, temporal joins, hops |
+| **Tail** | Terminals — materialise, aggregate, paginate, authorise |
+
+Compilation may **push down** eligible fragments to the database (e.g., PostgreSQL) while keeping non-pushable fragments in an interpreter, with cost-aware placement and parallelism where safe. The permission layer can be injected either as guards during pushdown or as an overlay during interpretation.
+
+## Bi-temporal queries
+
+Every HashQL query operates over a **bitemporal slice** parameterised by two independent time axes:
+
+- **Decision time** — when a fact was decided to be true in the real world.
+- **Transaction time** — when a fact was recorded in the database.
+
+One axis is **pinned** (a single instant) and the other is **variable** (a half-open interval). This allows queries to reconstruct the state of the graph as it was known at any point in the past, or to audit how beliefs about past facts have changed over time.
